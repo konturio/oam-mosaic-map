@@ -1,6 +1,7 @@
 SHELL := /bin/sh
 
 WDIR = /home/oam-downloader/images/
+BBOX = bbox=27.41600,53.84698,27.65060,53.94107
 
 all: oam_meta_update_loop
 
@@ -22,7 +23,7 @@ oam_meta_update: ## Download images from OAM
 		xargs -I {} curl https://api.openaerialmap.org/meta?page={} | jq -c '.results' > $(WDIR)oam_meta.json
 
 oam_meta_update_debug: ## Download images from OAM
-	curl https://api.openaerialmap.org/meta?limit=5 | jq -c '.results' > $(WDIR)oam_meta.json
+	curl https://api.openaerialmap.org/meta?$(BBOX) | jq -c '.results' > $(WDIR)oam_meta.json
 
 	cat $(WDIR)oam_meta.json | jq -r '.[].uuid' | \
-		parallel --progress -j 16 wget -nc -q -P $(WDIR) {}
+		parallel --progress -j 16 wget -nc -x -nH -q -P $(WDIR) {}
