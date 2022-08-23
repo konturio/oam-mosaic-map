@@ -1,0 +1,7 @@
+version: "3.9"
+
+services:
+  oam-downloader:
+    build: .
+    volumes:
+      - ./oam_images:/home/oam-downloader/images
