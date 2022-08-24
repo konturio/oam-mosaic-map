@@ -39,16 +39,23 @@ app.get("/tilejson.json", async (req, res) => {
 app.get("/tiles/:z/:x/:y.png", async (req, res) => {
   const { z, x, y } = req.params;
 
-  const { rows } = await client.query(`
-    with tile as (select ST_TileEnvelope(${z}, ${x}, ${y}) geom)
+  const { rows } = await client.query(`with oam_meta as (select properties->'gsd' as resolution_in_meters, 
+      properties->'uploaded_at' as uploaded_at, 
+      properties->'uuid' as uuid, 
+      geom
+    from public.layers_features
+    where layer_id = (select id
+      from public.layers
+      where public_id = 'openaerialmap')
+    ), tile as (select ST_TileEnvelope(${z}, ${x}, ${y}) geom)
     select ST_XMin(tile.geom) xmin,
-           ST_YMin(tile.geom) ymin,
-	   ST_XMax(tile.geom) xmax,
-	   ST_YMax(tile.geom) ymax,
-	   uuid
+        ST_YMin(tile.geom) ymin,
+        ST_XMax(tile.geom) xmax,
+        ST_YMax(tile.geom) ymax,
+        uuid
     from tile, oam_meta
-    where is_rgb and tile.geom && ST_Transform(oam_meta.geom, 3857)
-    order by resolution_in_meters desc nulls last, uploaded_at desc`);
+    where tile.geom && ST_Transform(oam_meta.geom, 3857)
+    order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`);
 
   let xmin, ymin, xmax, ymax;
   let uuids = [];
