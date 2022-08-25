@@ -3,7 +3,7 @@ SHELL := /bin/sh
 WDIR = /home/oam-downloader/images/
 BBOX = bbox=27.41600,53.84698,27.65060,53.94107
 
-all: oam_meta_update_loop
+all: oam_meta_update_debug
 
 .PHONY: oam_meta_update_loop run_oam_meta_update oam_meta_update oam_meta_update_debug
 
