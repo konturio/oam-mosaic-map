@@ -1,0 +1,14 @@
+{
+    "pg": {
+        "username": "user",
+        "port": 5432,
+        "user": "user",
+        "password": "pass",
+        "database": "db",
+        "host": "localhost",
+        "dialect": "postgres",
+        "logging": false,
+        "max": 10,
+        "idleTimeoutMillis": 30000
+    }
+}
