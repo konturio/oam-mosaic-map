@@ -24,7 +24,6 @@ router.get("/tilejson.json", async (req, res) => {
 
   });
 
-
 // localhost:3000/tiles/14/9440/5270.png
 router.get("/:z/:x/:y.png", async (req, res) => {
     const { z, x, y } = req.params;
@@ -46,7 +45,8 @@ router.get("/:z/:x/:y.png", async (req, res) => {
           uuid
       from tile, oam_meta
       where tile.geom && ST_Transform(oam_meta.geom, 3857)
-      order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`);
+      order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`
+  );
 
       let xmin, ymin, xmax, ymax;
       let uuids = [];
