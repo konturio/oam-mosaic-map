@@ -1,0 +1,14 @@
+{
+    "pg": {
+        "username": "layers-api",
+        "port": 15432,
+        "user": "layers-api",
+        "password": "mHFcqMQHtimMmVDBnjDu",
+        "database": "layers-db",
+        "host": "localhost",
+        "dialect": "postgres",
+        "logging": false,
+        "max": 10,
+        "idleTimeoutMillis": 30000
+    }
+}
