@@ -17,18 +17,18 @@ router.get("/tilejson.json", async (req, res) => {
             minzoom: 4,
             maxzoom: 20,
             center: [27.580661773681644, 53.85617102825757, 13],
-          });
-    } catch(err) {
+        });
+    } catch (err) {
         throw new Error();
     }
 
-  });
+});
 
 // localhost:3000/tiles/14/9440/5270.png
 router.get("/:z/:x/:y.png", async (req, res) => {
     const { z, x, y } = req.params;
     const client = await pool.connect();
-    try{
+    try {
         const { rows } = await client.query(`with oam_meta as (select properties->'gsd' as resolution_in_meters, 
         properties->'uploaded_at' as uploaded_at, 
         properties->'uuid' as uuid, 
@@ -46,66 +46,66 @@ router.get("/:z/:x/:y.png", async (req, res) => {
       from tile, oam_meta
       where tile.geom && ST_Transform(oam_meta.geom, 3857)
       order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`
-  );
+        );
 
-      let xmin, ymin, xmax, ymax;
-      let uuids = [];
-      for (const row of rows) {
-        xmin = row.xmin;
-        ymin = row.ymin;
-        xmax = row.xmax;
-        ymax = row.ymax;
-        const path = OAM_COGS_PATH + row.uuid.split("/").pop();
-        if (fs.existsSync(path)) uuids.push(path);
-      }
-    
-      if (uuids.length === 0) {
-        return res.status(204);
-      }
-    
-      const tileFilePath = `./tiles/${z}-${x}-${y}.png`;
-      if (!fs.existsSync(tileFilePath)) {
-        const gdalwarp = spawn("/home/gis/rastertiler/gdal/build/apps/gdalwarp", [
-          //"-srcnodata",
-          //0,
-          "-t_srs",
-          "epsg:3857",
-          "-dstalpha",
-          "-ts",
-          512,
-          512,
-          "-te",
-          xmin,
-          ymin,
-          xmax,
-          ymax,
-          ...uuids,
-          tileFilePath,
-        ]);
-    
-        let error = false;
-        //gdalwarp.on("stdout", (data) => console.log(data.toString()));
-        gdalwarp.on("stderr", (data) => {
-          error = true;
-          console.error(data.toString());
-        });
-    
-        await gdalwarp;
-    
-        if (error) {
-          console.error(">>>gdalwarp ERR");
-          throw new Error();
+        let xmin, ymin, xmax, ymax;
+        let uuids = [];
+        for (const row of rows) {
+            xmin = row.xmin;
+            ymin = row.ymin;
+            xmax = row.xmax;
+            ymax = row.ymax;
+            const path = OAM_COGS_PATH + row.uuid.split("/").pop();
+            if (fs.existsSync(path)) uuids.push(path);
         }
-      }
-    
-      fs.createReadStream(tileFilePath).pipe(res);
+
+        if (uuids.length === 0) {
+            return res.status(204);
+        }
+
+        const tileFilePath = `./tiles/${z}-${x}-${y}.png`;
+        if (!fs.existsSync(tileFilePath)) {
+            const gdalwarp = spawn("/home/gis/rastertiler/gdal/build/apps/gdalwarp", [
+                //"-srcnodata",
+                //0,
+                "-t_srs",
+                "epsg:3857",
+                "-dstalpha",
+                "-ts",
+                512,
+                512,
+                "-te",
+                xmin,
+                ymin,
+                xmax,
+                ymax,
+                ...uuids,
+                tileFilePath,
+            ]);
+
+            let error = false;
+            //gdalwarp.on("stdout", (data) => console.log(data.toString()));
+            gdalwarp.on("stderr", (data) => {
+                error = true;
+                console.error(data.toString());
+            });
+
+            await gdalwarp;
+
+            if (error) {
+                console.error(">>>gdalwarp ERR");
+                throw new Error();
+            }
+        }
+
+        fs.createReadStream(tileFilePath).pipe(res);
     } catch (err) {
         throw err;
     }
     finally {
         client.release();
     }
-  
-  });
 
-  module.exports = router;
+});
+
+module.exports = router;

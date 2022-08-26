@@ -18,12 +18,12 @@ router.get("/tilejson.json", async (req, res) => {
         minzoom: 11,
         maxzoom: 20,
         center: [-95.1649143756602, 29.73059311839303, 13],
-        });
     });
+});
 
 router.get("/:z/:x/:y.png", async (req, res) => {
     const { z, x, y } = req.params;
-  
+
     const { rows } = await client.query(`
       with tile as (select ST_TileEnvelope(${z}, ${x}, ${y}) geom)
       select ST_XMin(tile.geom) xmin,
@@ -32,44 +32,44 @@ router.get("/:z/:x/:y.png", async (req, res) => {
              ST_YMax(tile.geom) ymax
       from tile
       where tile.geom && ST_MakeEnvelope(-10683450.569, 3507542.354, -10583776.684, 3448227.220, 3857);`);
-  
+
     if (rows.length === 0) {
-      return res.status(204);
+        return res.status(204);
     }
-  
+
     let xmin, ymin, xmax, ymax;
     for (const row of rows) {
-      xmin = row.xmin;
-      ymin = row.ymin;
-      xmax = row.xmax;
-      ymax = row.ymax;
+        xmin = row.xmin;
+        ymin = row.ymin;
+        xmax = row.xmax;
+        ymax = row.ymax;
     }
-  
+
     const tileFilePath = `./tiles_reor/${z}-${x}-${y}.png`;
     if (!fs.existsSync(tileFilePath)) {
-      const gdalwarp = spawn("gdalwarp", [
-        "-srcnodata",
-        0,
-        //"-srcalpha",
-        "-ts",
-        512,
-        512,
-        "-te",
-        xmin,
-        ymin,
-        xmax,
-        ymax,
-        REOR_COG_PATH,
-        tileFilePath,
-      ]);
-  
-      gdalwarp.on("stdout", (data) => console.log(data.toString()));
-      gdalwarp.on("stderr", (data) => console.error(data.toString()));
-  
-      await gdalwarp;
-    }
-  
-    fs.createReadStream(tileFilePath).pipe(res);
-  });
+        const gdalwarp = spawn("gdalwarp", [
+            "-srcnodata",
+            0,
+            //"-srcalpha",
+            "-ts",
+            512,
+            512,
+            "-te",
+            xmin,
+            ymin,
+            xmax,
+            ymax,
+            REOR_COG_PATH,
+            tileFilePath,
+        ]);
 
-  module.exports = router;
+        gdalwarp.on("stdout", (data) => console.log(data.toString()));
+        gdalwarp.on("stderr", (data) => console.error(data.toString()));
+
+        await gdalwarp;
+    }
+
+    fs.createReadStream(tileFilePath).pipe(res);
+});
+
+module.exports = router;

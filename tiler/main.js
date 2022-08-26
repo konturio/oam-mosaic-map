@@ -19,11 +19,11 @@ app.use("/tiles", oamTiles);
 app.use("/reor", reorTiles);
 
 app.use((req, res, next) => {
-  res.json(401, { "message": "BadRequest" })
+  res.json(401, { "message": "Bad Request" })
 });
 
 app.use((error, req, res, next) => {
-  res.json(500, { "message": "something went wrong" });
+  res.json(500, { "message": "Something Went Wrong" });
 });
 
 process.on('uncaughtException', err => {
