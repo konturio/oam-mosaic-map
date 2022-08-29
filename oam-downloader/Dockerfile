@@ -5,8 +5,9 @@ RUN mkdir -p /home/oam-downloader/images
 
 WORKDIR /home/oam-downloader
 
-COPY Makefile .
+COPY oam-downloader.sh .
+COPY del-if-one-band.sh .
 
-RUN apt-get update && apt-get install -y make jq curl parallel wget
+RUN apt-get update && apt-get install -y jq curl parallel wget gdal-bin
 
-CMD ["make", "all"]
+CMD ["./oam-downloader.sh"]
