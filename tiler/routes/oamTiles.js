@@ -1,35 +1,36 @@
-var express = require('express');
-var router = express.Router();
-const config = require('../utils/config-helper').getConfig();
+const express = require("express");
+const router = express.Router();
+const config = require("../utils/config-helper").getConfig();
 const fs = require("fs");
-const pg = require('pg'),
-    pool = new pg.Pool(config.pg);
-const OAM_COGS_PATH = "/mnt/evo4tb/oam_cogs/";
-const BASE_URLd = "http://geocint.kontur.io/rastertiler";
+const spawn = require("spawndamnit");
+const pg = require("pg"),
+  pool = new pg.Pool(config.pg);
+const OAM_COGS_PATH = "/oam_src/";
+const BASE_URL = "http://geocint.kontur.io/rastertiler";
 
 router.get("/tilejson.json", async (req, res) => {
-    try {
-        res.json({
-            tilejson: "2.2.0",
-            version: "1.0.0",
-            scheme: "xyz",
-            tiles: [`${BASE_URL}/tiles/{z}/{x}/{y}.png`],
-            minzoom: 4,
-            maxzoom: 20,
-            center: [27.580661773681644, 53.85617102825757, 13],
-        });
-    } catch (err) {
-        throw new Error();
-    }
-
+  try {
+    res.json({
+      tilejson: "2.2.0",
+      version: "1.0.0",
+      scheme: "xyz",
+      tiles: [`${BASE_URL}/tiles/{z}/{x}/{y}.png`],
+      minzoom: 4,
+      maxzoom: 20,
+      center: [27.580661773681644, 53.85617102825757, 13],
+    });
+  } catch (err) {
+    throw err;
+  }
 });
 
 // localhost:3000/tiles/14/9440/5270.png
 router.get("/:z/:x/:y.png", async (req, res) => {
-    const { z, x, y } = req.params;
-    const client = await pool.connect();
-    try {
-        const { rows } = await client.query(`with oam_meta as (select properties->'gsd' as resolution_in_meters, 
+  const { z, x, y } = req.params;
+  const client = await pool.connect();
+  try {
+    const { rows } =
+      await client.query(`with oam_meta as (select properties->'gsd' as resolution_in_meters, 
         properties->'uploaded_at' as uploaded_at, 
         properties->'uuid' as uuid, 
         geom
@@ -45,67 +46,63 @@ router.get("/:z/:x/:y.png", async (req, res) => {
           uuid
       from tile, oam_meta
       where tile.geom && ST_Transform(oam_meta.geom, 3857)
-      order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`
-        );
+      order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`);
 
-        let xmin, ymin, xmax, ymax;
-        let uuids = [];
-        for (const row of rows) {
-            xmin = row.xmin;
-            ymin = row.ymin;
-            xmax = row.xmax;
-            ymax = row.ymax;
-            const path = OAM_COGS_PATH + row.uuid.split("/").pop();
-            if (fs.existsSync(path)) uuids.push(path);
-        }
-
-        if (uuids.length === 0) {
-            return res.status(204);
-        }
-
-        const tileFilePath = `./tiles/${z}-${x}-${y}.png`;
-        if (!fs.existsSync(tileFilePath)) {
-            const gdalwarp = spawn("/home/gis/rastertiler/gdal/build/apps/gdalwarp", [
-                //"-srcnodata",
-                //0,
-                "-t_srs",
-                "epsg:3857",
-                "-dstalpha",
-                "-ts",
-                512,
-                512,
-                "-te",
-                xmin,
-                ymin,
-                xmax,
-                ymax,
-                ...uuids,
-                tileFilePath,
-            ]);
-
-            let error = false;
-            //gdalwarp.on("stdout", (data) => console.log(data.toString()));
-            gdalwarp.on("stderr", (data) => {
-                error = true;
-                console.error(data.toString());
-            });
-
-            await gdalwarp;
-
-            if (error) {
-                console.error(">>>gdalwarp ERR");
-                throw new Error();
-            }
-        }
-
-        fs.createReadStream(tileFilePath).pipe(res);
-    } catch (err) {
-        throw err;
-    }
-    finally {
-        client.release();
+    let xmin, ymin, xmax, ymax;
+    let uuids = [];
+    for (const row of rows) {
+      xmin = row.xmin;
+      ymin = row.ymin;
+      xmax = row.xmax;
+      ymax = row.ymax;
+      const path = OAM_COGS_PATH + row.uuid.split("/").pop();
+      if (fs.existsSync(path)) uuids.push(path);
     }
 
+    if (uuids.length === 0) {
+      return res.status(204);
+    }
+
+    const tileFilePath = `/usr/src/app/tiles-cache/${z}-${x}-${y}.png`;
+    if (!fs.existsSync(tileFilePath)) {
+      const gdalwarp = spawn("gdalwarp", [
+        //"-srcnodata",
+        //0,
+        "-t_srs",
+        "epsg:3857",
+        "-dstalpha",
+        "-ts",
+        512,
+        512,
+        "-te",
+        xmin,
+        ymin,
+        xmax,
+        ymax,
+        ...uuids,
+        tileFilePath,
+      ]);
+
+      let error = false;
+      gdalwarp.on("stdout", (data) => console.log(data.toString()));
+      gdalwarp.on("stderr", (data) => {
+        error = true;
+        console.error(data.toString());
+      });
+
+      await gdalwarp;
+
+      if (error) {
+        throw new Error();
+      }
+    }
+
+    fs.createReadStream(tileFilePath).pipe(res);
+  } catch (err) {
+    throw err;
+  } finally {
+    client.release();
+  }
 });
 
 module.exports = router;
