@@ -31,6 +31,7 @@ process.on('uncaughtException', err => {
 })
 
 const start = async () => {
+  console.log('>>>start')
   try {
     app.listen(7802);
   } catch (err) {
