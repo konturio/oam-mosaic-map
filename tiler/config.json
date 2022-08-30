@@ -1,4 +1,7 @@
 {
+    "app": {
+        "port": 7802
+    },
     "pg": {
         "username": "layers-db",
         "port": 5432,
