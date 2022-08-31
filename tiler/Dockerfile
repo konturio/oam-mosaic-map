@@ -15,6 +15,6 @@ COPY . .
 RUN mkdir /usr/src/app/tiles-cache
 RUN mkdir /oam_src
 
-EXPOSE 7802
+EXPOSE 8080
 
 CMD [ "node", "main.js" ]

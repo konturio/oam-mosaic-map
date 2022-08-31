@@ -31,9 +31,9 @@ process.on('uncaughtException', err => {
 })
 
 const start = async () => {
-  console.log('>>>start')
   try {
-    app.listen(7802);
+    app.listen(8080);
+    console.log('>raster tiler server is listening on port 8080');
   } catch (err) {
     console.error(err);
     process.exit(1);
