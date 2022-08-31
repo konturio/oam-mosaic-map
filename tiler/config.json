@@ -1,6 +1,8 @@
 {
     "app": {
-        "port": 7802
+        "port": 7802,
+        "oam_path": "oam_src/",
+        "base_url": "http://geocint.kontur.io/rastertiler"
     },
     "pg": {
         "username": "layers-db",
