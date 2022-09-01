@@ -1,6 +1,6 @@
 {
     "app": {
-        "port": 7802,
+        "port": 8080,
         "oam_path": "oam_src/",
         "base_url": "http://geocint.kontur.io/rastertiler"
     },
