@@ -5,8 +5,8 @@ const fs = require("fs");
 const spawn = require("spawndamnit");
 const pg = require("pg"),
   pool = new pg.Pool(config.pg);
-const OAM_COGS_PATH = "/oam_src/";
-const BASE_URL = "http://geocint.kontur.io/rastertiler";
+const OAM_COGS_PATH =  "/" + config.app.oam_path;
+const BASE_URL = config.app.base_url;
 
 router.get("/tilejson.json", async (req, res) => {
   try {

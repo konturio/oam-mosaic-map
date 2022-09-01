@@ -6,7 +6,7 @@ const fs = require("fs");
 const pg = require('pg'),
     pool = new pg.Pool(config.pg);
 
-const BASE_URL = "http://geocint.kontur.io/rastertiler";
+const BASE_URL = config.app.base_url;
 const REOR_COG_PATH = "/home/gis/rastertiler/reor_colored_cog.tif";
 
 router.get("/tilejson.json", async (req, res) => {
