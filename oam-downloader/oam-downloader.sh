@@ -16,7 +16,7 @@ if [ -n "$WORKDIR" ] && [ -d $WORKDIR ]; then
         xargs -I {} curl -s https://api.openaerialmap.org/meta?page={} | jq -c '.results' > $WORKDIR/$OUTPUT
   fi
 
-  cat $WORKDIR/$OUTPUT | jq -r '.[].uuid' | parallel --halt now,fail=1 --progress -j 16 wget -nc -x -nH -q -P $WORKDIR {}
+  cat $WORKDIR/$OUTPUT | jq -r '.[].uuid' | parallel --halt now,fail=1 -j 16 wget -nc -x -nH -q -P $WORKDIR {}
 
   rm -f $WORKDIR/deleted_list
   find $WORKDIR -type f -name '*.tif' | xargs -l -P 0 ./del-if-one-band.sh
