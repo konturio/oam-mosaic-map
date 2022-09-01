@@ -1,8 +1,8 @@
 "use strict";
-var path = require('path');
-var pathToJson = path.resolve(__dirname, '../config.json');
+const path = require('path');
+const pathToJson = path.resolve(__dirname, '../config.json');
 
-var fs = require('fs'),
+const fs = require('fs'),
     config = JSON.parse(fs.readFileSync(pathToJson, 'utf8'));
 
 function getConfig() {

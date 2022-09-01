@@ -1,5 +1,5 @@
-var express = require('express');
-var router = express.Router();
+const express = require('express');
+const router = express.Router();
 const config = require('../utils/config-helper').getConfig();
 const spawn = require("spawndamnit");
 const fs = require("fs");
