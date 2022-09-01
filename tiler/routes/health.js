@@ -24,7 +24,7 @@ router.get("/live", async (req, res) => {
                 return files.length !== 0;
             })
             .catch(err => {
-                res.json(live);
+                res.json(unLive);
                 throw err;
             })
     
