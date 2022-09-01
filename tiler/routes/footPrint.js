@@ -7,8 +7,9 @@ const pg = require("pg"),
 
 router.get("/:z/:x/:y.mvt", async (req, res, next) => {
   const { z, x, y } = req.params;
-  const client = await pool.connect();
+  let client;
   try {
+    client = await pool.connect();
     const { rows } = await client.query(`
         with oam_meta as (
           select geom from public.layers_features
