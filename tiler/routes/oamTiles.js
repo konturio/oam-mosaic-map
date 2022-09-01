@@ -26,9 +26,10 @@ router.get("/tilejson.json", async (req, res) => {
 
 // localhost:3000/tiles/14/9440/5270.png
 router.get("/:z/:x/:y.png", async (req, res) => {
+  let client;
   const { z, x, y } = req.params;
-  const client = await pool.connect();
   try {
+    client = await pool.connect();
     const { rows } =
       await client.query(`with oam_meta as (select properties->'gsd' as resolution_in_meters, 
         properties->'uploaded_at' as uploaded_at, 
