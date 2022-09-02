@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const config = require('../utils/config-helper').getConfig();
-const spawn = require("spawndamnit");
+const { spawn } = require('child_process');
 const fs = require("fs");
 const pg = require('pg'),
     pool = new pg.Pool(config.pg);
@@ -61,15 +61,25 @@ router.get("/:z/:x/:y.png", async (req, res) => {
             ymax,
             REOR_COG_PATH,
             tileFilePath,
-        ]);
-
-        gdalwarp.on("stdout", (data) => console.log(data.toString()));
-        gdalwarp.on("stderr", (data) => console.error(data.toString()));
-
-        await gdalwarp;
-    }
-
-    fs.createReadStream(tileFilePath).pipe(res);
+        ], { detached: true });
+        gdalwarp.unref();
+        
+        gdalwarp.stdout.on('data', (data) => {
+            //data started to be created
+            //can add some logs
+        });
+        
+        gdalwarp.stderr.on('data', (data) => {
+            console.error(`stderr: ${data}`);
+        });
+        
+        gdalwarp.on('close', (code) => {
+            //spawn ended and closed
+            fs.createReadStream(tileFilePath).pipe(res);
+        });
+    } else {
+        fs.createReadStream(tileFilePath).pipe(res);
+      }
 });
 
 module.exports = router;

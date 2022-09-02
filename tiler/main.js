@@ -7,6 +7,7 @@ const footPrint = require("./routes/footPrint");
 const oamTiles = require("./routes/oamTiles");
 const reorTiles = require("./routes/reorTiles");
 const health = require('./routes/health');
+const testtile = require('./routes/testtile');
 
 const app = express();
 
@@ -16,6 +17,7 @@ app.use(
 app.use(cors());
 
 app.use("/", landing);
+app.use('/testtile', testtile);
 app.use("/outlines", footPrint);
 app.use("/tiles", oamTiles);
 app.use("/reor", reorTiles);
@@ -27,6 +29,7 @@ app.use((req, res, next) => {
 });
 
 app.use((error, req, res, next) => {
+  console.log(error);
   res.json(500, { "message": "Something Went Wrong" });
 });
 
