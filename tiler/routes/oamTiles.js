@@ -2,7 +2,7 @@ const express = require("express");
 const router = express.Router();
 const config = require("../utils/config-helper").getConfig();
 const fs = require("fs");
-const spawn = require("spawndamnit");
+const { spawn } = require('child_process');
 const pg = require("pg"),
   pool = new pg.Pool(config.pg);
 const OAM_COGS_PATH =  "/" + config.app.oam_path;
@@ -82,23 +82,25 @@ router.get("/:z/:x/:y.png", async (req, res) => {
         ymax,
         ...uuids,
         tileFilePath,
-      ]);
+      ], { detached: true });
+      gdalwarp.unref();
 
-      let error = false;
-      gdalwarp.on("stdout", (data) => console.log(data.toString()));
-      gdalwarp.on("stderr", (data) => {
-        error = true;
-        console.error(data.toString());
+      gdalwarp.stdout.on('data', (data) => {
+        //data started to be created
+        //can add some logs
       });
-
-      await gdalwarp;
-
-      if (error) {
-        throw new Error();
-      }
+      
+      gdalwarp.stderr.on('data', (data) => {
+        console.error(`stderr: ${data}`);
+      });
+      
+      gdalwarp.on('close', (code) => {
+        //spawn ended and closed
+        fs.createReadStream(tileFilePath).pipe(res);
+      });
+    } else {
+      fs.createReadStream(tileFilePath).pipe(res);
     }
-
-    fs.createReadStream(tileFilePath).pipe(res);
   } catch (err) {
     throw err;
   } finally {
