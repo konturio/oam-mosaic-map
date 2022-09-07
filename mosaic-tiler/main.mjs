@@ -1,4 +1,5 @@
 import fs from "fs";
+import dotenv from "dotenv";
 import sharp from "sharp";
 import pg from "pg";
 import got from "got";
@@ -9,10 +10,9 @@ import zlib from "zlib";
 import uniqueString from "unique-string";
 import PQueue from "p-queue";
 
-process.env.PGHOST = "localhost";
-process.env.PGUSER = "gis";
+dotenv.config({ path: ".env" });
 
-const BASE_URL = "http://geocint.kontur.io/rastertiler";
+const BASE_URL = process.env.BASE_URL;
 const TILE_SIZE = 256;
 
 const app = express();
