@@ -11,7 +11,7 @@ Mosaic Tiler for generating tiles from [OpenAerialMap.org](OpenAerialMap.org) im
 
 Links to images and metadata about images stored in __layers-db__.
 
-To generate tile out of couple images on the same teritory query filters images by ground resolution and latest uploaded date
+To generate tile out of couple images on the same territory query filters images by ground resolution and latest uploaded date
 
 
 
