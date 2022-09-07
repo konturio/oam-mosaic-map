@@ -5,11 +5,9 @@ import got from "got";
 import express from "express";
 import morgan from "morgan";
 import cors from "cors";
-import node_gzip from "node-gzip";
+import zlib from "zlib";
 import uniqueString from "unique-string";
 import PQueue from "p-queue";
-
-const { gzip } = node_gzip;
 
 process.env.PGHOST = "localhost";
 process.env.PGUSER = "gis";
@@ -81,10 +79,8 @@ app.get(
       return res.status(204);
     }
 
-    const gz = await gzip(rows[0].mvt);
-
     res.writeHead(200, { "Content-Encoding": "gzip" });
-    res.end(gz);
+    res.end(zlib.gzipSync(rows[0].mvt));
   })
 );
 
