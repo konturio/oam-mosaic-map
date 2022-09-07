@@ -14,6 +14,8 @@ dotenv.config({ path: ".env" });
 
 const BASE_URL = process.env.BASE_URL;
 const TILE_SIZE = 256;
+const TILES_CACHE_DIR_PATH = process.env.TILES_CACHE_DIR_PATH;
+const TMP_DIR_PATH = process.env.TMP_DIR_PATH || "/tmp";
 
 const app = express();
 const db = new pg.Client();
@@ -112,8 +114,8 @@ async function downloadTile(uuid, { z, x, y }) {
     return null;
   }
 
-  const path = `./tiles/${uuid}/${z}/${x}/${y}.png`;
-  const temp = `./tmp/download-${uniqueString()}`;
+  const path = `${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/${y}.png`;
+  const temp = `${TMP_DIR_PATH}/download-${uniqueString()}`;
   await fs.promises.writeFile(temp, tile);
   await fs.promises.rename(temp, path);
   return path;
@@ -135,13 +137,15 @@ async function tile(uuid, { z, x, y }) {
     return "./bg.png";
   }
 
-  const fsPath = `./tiles/${uuid}/${z}/${x}/${y}.png`;
+  const fsPath = `${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/${y}.png`;
   if (fs.existsSync(fsPath)) {
     return fsPath;
   }
 
-  if (!fs.existsSync(`./tiles/${uuid}/${z}/${x}/`)) {
-    fs.mkdirSync(`./tiles/${uuid}/${z}/${x}/`, { recursive: true });
+  if (!fs.existsSync(`${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/`)) {
+    fs.mkdirSync(`${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/`, {
+      recursive: true,
+    });
   }
 
   const downloadedPath = await downloadTile(uuid, { z, x, y });
@@ -165,7 +169,7 @@ async function tile(uuid, { z, x, y }) {
     })
   );
 
-  const temp = `./tmp/render-${uniqueString()}`;
+  const temp = `${TMP_DIR_PATH}/render-${uniqueString()}`;
   const r = await sharp({
     create: {
       width: TILE_SIZE,
