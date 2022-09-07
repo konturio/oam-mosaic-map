@@ -1,3 +1,4 @@
+import assert from "assert";
 import fs from "fs";
 import dotenv from "dotenv";
 import sharp from "sharp";
@@ -56,7 +57,7 @@ app.get(
   wrapAsyncCallback(async (req, res) => {
     const { z, x, y } = req.params;
 
-    const tile = await mosaic({ z: Number(z), x: Number(x), y: Number(y) });
+    const tile = await mosaic(Number(z), Number(x), Number(y));
     res.end(tile);
   })
 );
@@ -102,7 +103,46 @@ app.use(function (err, req, res, next) {
 
 const tileRequestQueue = new PQueue({ concurrency: 3 });
 
-async function downloadTile(uuid, { z, x, y }) {
+async function cacheGet(uuid, z, x, y) {
+  assert(Number.isInteger(z));
+  assert(Number.isInteger(x));
+  assert(Number.isInteger(y));
+
+  try {
+    return await fs.promises.readFile(
+      `${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/${y}.png`
+    );
+  } catch (err) {
+    if (err.code === "ENOENT") {
+      return null;
+    }
+
+    throw err;
+  }
+}
+
+async function cachePut(tile, uuid, z, x, y) {
+  assert(Number.isInteger(z));
+  assert(Number.isInteger(x));
+  assert(Number.isInteger(y));
+
+  if (!fs.existsSync(`${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/`)) {
+    fs.mkdirSync(`${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/`, {
+      recursive: true,
+    });
+  }
+
+  const path = `${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/${y}.png`;
+  const temp = `${TMP_DIR_PATH}/${uniqueString()}`;
+  await fs.promises.writeFile(temp, tile);
+  await fs.promises.rename(temp, path);
+}
+
+async function downloadTile(uuid, z, x, y) {
+  assert(Number.isInteger(z));
+  assert(Number.isInteger(x));
+  assert(Number.isInteger(y));
+
   const tile = await tileRequestQueue.add(() =>
     got(`https://tiles.openaerialmap.org/${uuid}/${z}/${x}/${y}.png`, {
       throwHttpErrors: true,
@@ -114,63 +154,19 @@ async function downloadTile(uuid, { z, x, y }) {
     return null;
   }
 
-  const path = `${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/${y}.png`;
-  const temp = `${TMP_DIR_PATH}/download-${uniqueString()}`;
-  await fs.promises.writeFile(temp, tile);
-  await fs.promises.rename(temp, path);
-  return path;
+  return tile;
 }
 
 function pixelSizeAtZoom(z) {
   return ((20037508.342789244 / 512) * 2) / 2 ** z;
 }
 
-async function tile(uuid, { z, x, y }) {
-  const { rows } = await db.query(
-    `select true from oam_meta
-     where ST_Transform(geom, 3857) && ST_TileEnvelope(${z}, ${x}, ${y})
-      and ST_Area(ST_Transform(geom, 3857)) > ${pixelSizeAtZoom(z)}
-      and uuid ~ '${uuid}';`
-  );
-
-  if (!rows.length || z > 25) {
-    return "./bg.png";
+function fromChildren(tiles) {
+  for (const tile of tiles) {
+    assert(Buffer.isBuffer(tile));
   }
 
-  const fsPath = `${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/${y}.png`;
-  if (fs.existsSync(fsPath)) {
-    return fsPath;
-  }
-
-  if (!fs.existsSync(`${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/`)) {
-    fs.mkdirSync(`${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/`, {
-      recursive: true,
-    });
-  }
-
-  const downloadedPath = await downloadTile(uuid, { z, x, y });
-  if (downloadedPath) {
-    return downloadedPath;
-  }
-
-  const children = [
-    { z: z + 1, x: x * 2, y: y * 2 },
-    { z: z + 1, x: x * 2 + 1, y: y * 2 },
-    { z: z + 1, x: x * 2, y: y * 2 + 1 },
-    { z: z + 1, x: x * 2 + 1, y: y * 2 + 1 },
-  ];
-
-  const tiles = await Promise.all(
-    children.map(async (pos) => {
-      const tilePath = await tile(uuid, pos);
-      return sharp(tilePath)
-        .resize({ width: TILE_SIZE / 2, height: TILE_SIZE / 2 })
-        .toBuffer();
-    })
-  );
-
-  const temp = `${TMP_DIR_PATH}/render-${uniqueString()}`;
-  const r = await sharp({
+  return sharp({
     create: {
       width: TILE_SIZE,
       height: TILE_SIZE,
@@ -201,51 +197,122 @@ async function tile(uuid, { z, x, y }) {
       },
     ])
     .png()
-    .toFile(temp);
-
-  await fs.promises.rename(temp, fsPath);
-
-  return fsPath;
+    .toBuffer();
 }
 
-async function mosaic({ z, x, y }) {
+async function source(uuid, z, x, y) {
+  assert(Number.isInteger(z));
+  assert(Number.isInteger(x));
+  assert(Number.isInteger(y));
+
   const { rows } = await db.query(
-    `select uuid from oam_meta
+    `select true from oam_meta
      where ST_Transform(geom, 3857) && ST_TileEnvelope(${z}, ${x}, ${y})
-     order by resolution_in_meters desc nulls last, uploaded_at desc;`
+      and ST_Area(ST_Transform(geom, 3857)) > ${pixelSizeAtZoom(z)}
+      and uuid ~ '${uuid}';`
   );
-
-  const inputs = [];
-  for (const row of rows) {
-    const uuid = row.uuid
-      .replace("http://oin-hotosm.s3.amazonaws.com/", "")
-      .replace("https://oin-hotosm.s3.amazonaws.com/", "")
-      .replace(".tif", "");
-
-    inputs.push(
-      sharp(await tile(uuid, { z, x, y }))
-        .png()
-        .toBuffer()
-    );
+  if (!rows.length) {
+    return null;
   }
 
-  const tiles = await Promise.all(inputs);
+  let tile = await cacheGet(uuid, z, x, y);
+  if (tile) {
+    return tile;
+  }
 
-  return sharp({
-    create: {
-      width: TILE_SIZE,
-      height: TILE_SIZE,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    },
-  })
-    .composite(
-      tiles.map((tile) => {
-        return { input: tile, top: 0, left: 0 };
+  tile = await downloadTile(uuid, z, x, y);
+  if (!tile) {
+    const children = [
+      { z: z + 1, x: x * 2, y: y * 2 },
+      { z: z + 1, x: x * 2 + 1, y: y * 2 },
+      { z: z + 1, x: x * 2, y: y * 2 + 1 },
+      { z: z + 1, x: x * 2 + 1, y: y * 2 + 1 },
+    ];
+
+    const tiles = await Promise.all(
+      children.map(async ({ z, x, y }) => {
+        const tile = await mosaic(z, x, y);
+        return sharp(tile)
+          .resize({ width: TILE_SIZE / 2, height: TILE_SIZE / 2 })
+          .toBuffer();
       })
-    )
-    .png()
-    .toBuffer();
+    );
+
+    tile = await fromChildren(tiles);
+  }
+
+  await cachePut(tile, uuid, z, x, y);
+
+  return tile;
+}
+
+async function mosaic(z, x, y) {
+  assert(Number.isInteger(z));
+  assert(Number.isInteger(x));
+  assert(Number.isInteger(y));
+
+  let tile = await cacheGet("__mosaic__", z, x, y);
+  if (tile) {
+    return tile;
+  }
+
+  if (z < 11) {
+    const children = [
+      { z: z + 1, x: x * 2, y: y * 2 },
+      { z: z + 1, x: x * 2 + 1, y: y * 2 },
+      { z: z + 1, x: x * 2, y: y * 2 + 1 },
+      { z: z + 1, x: x * 2 + 1, y: y * 2 + 1 },
+    ];
+
+    const tiles = await Promise.all(
+      children.map(async ({ z, x, y }) => {
+        const tile = await mosaic(z, x, y);
+        return sharp(tile)
+          .resize({ width: TILE_SIZE / 2, height: TILE_SIZE / 2 })
+          .toBuffer();
+      })
+    );
+
+    tile = await fromChildren(tiles);
+  } else {
+    const { rows } = await db.query(
+      `select uuid from oam_meta
+     where ST_Transform(geom, 3857) && ST_TileEnvelope(${z}, ${x}, ${y})
+     order by resolution_in_meters desc nulls last, uploaded_at desc;`
+    );
+
+    const sources = [];
+    for (const row of rows) {
+      const uuid = row.uuid
+        .replace("http://oin-hotosm.s3.amazonaws.com/", "")
+        .replace("https://oin-hotosm.s3.amazonaws.com/", "")
+        .replace(".tif", "");
+
+      sources.push(source(uuid, z, x, y));
+    }
+
+    const tiles = await Promise.all(sources);
+
+    tile = await sharp({
+      create: {
+        width: TILE_SIZE,
+        height: TILE_SIZE,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .composite(
+        tiles.map((tile) => {
+          return { input: tile, top: 0, left: 0 };
+        })
+      )
+      .png()
+      .toBuffer();
+  }
+
+  await cachePut(tile, "__mosaic__", z, x, y);
+
+  return tile;
 }
 
 async function main() {
