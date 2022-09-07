@@ -1,1 +1,7 @@
-/tiler/node_modules
+.DS_Store
+.vscode
+.idea
+.vs
+**/target
+**/node_modules
+npm/cli-*
