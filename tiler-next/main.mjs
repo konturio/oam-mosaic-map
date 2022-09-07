@@ -1,4 +1,3 @@
-import { pipeline } from "stream/promises";
 import fs from "fs";
 import sharp from "sharp";
 import pg from "pg";
@@ -10,7 +9,7 @@ import node_gzip from "node-gzip";
 import uniqueString from "unique-string";
 import PQueue from "p-queue";
 
-const { gzip, ungzip } = node_gzip;
+const { gzip } = node_gzip;
 
 process.env.PGHOST = "localhost";
 process.env.PGUSER = "gis";
@@ -55,15 +54,10 @@ app.get(
 app.get(
   "/tiles/:z/:x/:y.png",
   wrapAsyncCallback(async (req, res) => {
-    try {
-      const { z, x, y } = req.params;
+    const { z, x, y } = req.params;
 
-      const tile = await mosaic({ z: Number(z), x: Number(x), y: Number(y) });
-      res.end(tile);
-    } catch (err) {
-      console.error(">tiler request handler error", err);
-      throw err;
-    }
+    const tile = await mosaic({ z: Number(z), x: Number(x), y: Number(y) });
+    res.end(tile);
   })
 );
 
@@ -101,10 +95,10 @@ app.use(function (err, req, res, next) {
   next;
 });
 
-const queue = new PQueue({ concurrency: 3 });
+const tileRequestQueue = new PQueue({ concurrency: 3 });
 
 async function downloadTile(uuid, { z, x, y }) {
-  const tile = await queue.add(() =>
+  const tile = await tileRequestQueue.add(() =>
     got(`https://tiles.openaerialmap.org/${uuid}/${z}/${x}/${y}.png`, {
       throwHttpErrors: true,
       retry: { limit: 3 },
@@ -122,7 +116,7 @@ async function downloadTile(uuid, { z, x, y }) {
   return path;
 }
 
-function pixel_size_at_zoom(z) {
+function pixelSizeAtZoom(z) {
   return ((20037508.342789244 / 512) * 2) / 2 ** z;
 }
 
@@ -130,7 +124,7 @@ async function tile(uuid, { z, x, y }) {
   const { rows } = await db.query(
     `select true from oam_meta
      where ST_Transform(geom, 3857) && ST_TileEnvelope(${z}, ${x}, ${y})
-      and ST_Area(ST_Transform(geom, 3857)) > ${pixel_size_at_zoom(z)}
+      and ST_Area(ST_Transform(geom, 3857)) > ${pixelSizeAtZoom(z)}
       and uuid ~ '${uuid}';`
   );
 
