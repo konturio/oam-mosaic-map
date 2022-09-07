@@ -88,6 +88,13 @@ app.get(
   })
 );
 
+app.get(
+  "/health",
+  wrapAsyncCallback(async (req, res) => {
+    res.status(200).send("Ok");
+  })
+);
+
 app.use(function (err, req, res, next) {
   console.error(err.stack);
   res.status(500);
