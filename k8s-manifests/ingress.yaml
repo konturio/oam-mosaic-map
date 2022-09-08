@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: raster-tiler
+  namespace: dev-mosaic
+  annotations:
+    acme.cert-manager.io/http01-edit-in-place: "true"
+    cert-manager.io/cluster-issuer: letsencrypt-production
+  labels:
+    app.kubernetes.io/managed-by: manually
+    app.kubernetes.io/name: raster-tiler
+    app.kubernetes.io/instance: raster-tiler-abcxzy
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: backend
+    environment: dev
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: raster-tiler.k8s-01.konturlabs.com
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: raster-tiler
+            port:
+              name: http
+  tls:
+  - hosts:
+    - raster-tiler.k8s-01.konturlabs.com
+    secretName: raster-tiler-tls
