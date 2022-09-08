@@ -44,7 +44,6 @@ function wrapAsyncCallback(callback) {
       callback(req, res, next).catch(next);
     } catch (err) {
       console.log(">err", err);
-      logger.error(err);
       next(err);
     }
   };
@@ -109,6 +108,7 @@ app.get(
 
 app.use(function (err, req, res, next) {
   console.error(err.stack);
+  logger.error(err);
   res.status(500);
   res.end("Internal server error");
   next;
