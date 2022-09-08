@@ -67,17 +67,23 @@ app.get(
   wrapAsyncCallback(async (req, res) => {
     const { z, x, y } = req.params;
 
-    const { rows } = await db.query(`
-	      with mvtgeom as
-	      (
-          select ST_AsMVTGeom(st_transform(st_boundary(mask_geom), 3857), ST_TileEnvelope(${z}, ${x}, ${y})) as geom
-          from oam_meta
-          where (is_cog_ready = true or is_cog_ready = false) and st_transform(mask_geom, 3857) && ST_TileEnvelope(${z}, ${x}, ${y})
-	      )
-	      select st_asmvt(mvtgeom.*) as mvt
-	      from mvtgeom;
-	    `);
-
+    const { rows } = await db.query(
+      `with oam_meta as (
+         select geom from public.layers_features
+         where layer_id = (select id from public.layers where public_id = 'openaerialmap')
+       ),
+       mvtgeom as (
+         select
+           ST_AsMVTGeom(
+             ST_Transform(ST_Boundary(geom), 3857),
+             ST_TileEnvelope(${z}, ${x}, ${y})
+           ) geom
+         from oam_meta
+         where ST_Transform(geom, 3857) && ST_TileEnvelope(${z}, ${x}, ${y})
+      )
+      select ST_AsMVT(mvtgeom.*) as mvt
+      from mvtgeom`
+    );
     if (rows.length === 0) {
       return res.status(204);
     }
@@ -206,10 +212,21 @@ async function source(uuid, z, x, y) {
   assert(Number.isInteger(y));
 
   const { rows } = await db.query(
-    `select true from oam_meta
-     where ST_Transform(geom, 3857) && ST_TileEnvelope(${z}, ${x}, ${y})
-      and ST_Area(ST_Transform(geom, 3857)) > ${pixelSizeAtZoom(z)}
-      and uuid ~ '${uuid}';`
+    `with oam_meta as (
+        select
+          properties->>'gsd' as resolution_in_meters, 
+          properties->>'uploaded_at' as uploaded_at, 
+          properties->>'uuid' as uuid, 
+          geom
+        from public.layers_features
+        where layer_id = (select id from public.layers where public_id = 'openaerialmap')
+      )
+      select true
+      from oam_meta
+      where ST_TileEnvelope(${z}, ${x}, ${y}) && ST_Transform(geom, 3857)
+        and ST_Area(ST_Transform(geom, 3857)) > ${pixelSizeAtZoom(z)}
+        and uuid ~ '${uuid}' 
+      order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`
   );
   if (!rows.length) {
     return null;
@@ -276,9 +293,19 @@ async function mosaic(z, x, y) {
     tile = await fromChildren(tiles);
   } else {
     const { rows } = await db.query(
-      `select uuid from oam_meta
-     where ST_Transform(geom, 3857) && ST_TileEnvelope(${z}, ${x}, ${y})
-     order by resolution_in_meters desc nulls last, uploaded_at desc;`
+      `with oam_meta as (
+          select
+              properties->>'gsd' as resolution_in_meters, 
+              properties->>'uploaded_at' as uploaded_at, 
+              properties->>'uuid' as uuid, 
+              geom
+          from public.layers_features
+          where layer_id = (select id from public.layers where public_id = 'openaerialmap')
+        )
+        select uuid
+        from oam_meta
+        where ST_TileEnvelope(${z}, ${x}, ${y}) && ST_Transform(geom, 3857)
+        order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`
     );
 
     const sources = [];
