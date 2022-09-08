@@ -1,4 +1,4 @@
-import assert from "assert";
+import { promisify } from "util";
 import fs from "fs";
 import dotenv from "dotenv";
 import sharp from "sharp";
@@ -13,10 +13,13 @@ import PQueue from "p-queue";
 
 dotenv.config({ path: ".env" });
 
+const PORT = process.env.PORT;
 const BASE_URL = process.env.BASE_URL;
 const TILE_SIZE = 256;
 const TILES_CACHE_DIR_PATH = process.env.TILES_CACHE_DIR_PATH;
 const TMP_DIR_PATH = process.env.TMP_DIR_PATH || "/tmp";
+
+const gzip = promisify(zlib.gzip);
 
 const app = express();
 const db = new pg.Client();
@@ -37,6 +40,10 @@ function wrapAsyncCallback(callback) {
   };
 }
 
+function isValidZxy(z, x, y) {
+  return z < 0 || x < 0 || y < 0 || x >= Math.pow(2, z) || y >= Math.pow(2, z);
+}
+
 app.get(
   "/tiles/tilejson.json",
   wrapAsyncCallback(async (req, res) => {
@@ -53,19 +60,29 @@ app.get(
 );
 
 app.get(
-  "/tiles/:z/:x/:y.png",
+  "/tiles/:z(\\d+)/:x(\\d+)/:y(\\d+).png",
   wrapAsyncCallback(async (req, res) => {
-    const { z, x, y } = req.params;
+    const z = Number(req.params.z);
+    const x = Number(req.params.x);
+    const y = Number(req.params.y);
+    if (isValidZxy(z, x, y)) {
+      return res.status(404).send("Out of bounds");
+    }
 
-    const tile = await mosaic(Number(z), Number(x), Number(y));
+    const tile = await mosaic(z, x, y);
     res.end(tile);
   })
 );
 
 app.get(
-  "/outlines/:z/:x/:y.mvt",
+  "/outlines/:z(\\d+)/:x(\\d+)/:y(\\d+).mvt",
   wrapAsyncCallback(async (req, res) => {
-    const { z, x, y } = req.params;
+    const z = Number(req.params.z);
+    const x = Number(req.params.x);
+    const y = Number(req.params.y);
+    if (isValidZxy(z, x, y)) {
+      return res.status(404).send("Out of bounds");
+    }
 
     const { rows } = await db.query(
       `with oam_meta as (
@@ -76,20 +93,21 @@ app.get(
          select
            ST_AsMVTGeom(
              ST_Transform(ST_Boundary(geom), 3857),
-             ST_TileEnvelope(${z}, ${x}, ${y})
+             ST_TileEnvelope($1, $2, $3)
            ) geom
          from oam_meta
-         where ST_Transform(geom, 3857) && ST_TileEnvelope(${z}, ${x}, ${y})
+         where ST_Transform(geom, 3857) && ST_TileEnvelope($4, $5, $6)
       )
       select ST_AsMVT(mvtgeom.*) as mvt
-      from mvtgeom`
+      from mvtgeom`,
+      [z, x, y, z, x, y]
     );
     if (rows.length === 0) {
       return res.status(204);
     }
 
     res.writeHead(200, { "Content-Encoding": "gzip" });
-    res.end(zlib.gzipSync(rows[0].mvt));
+    res.end(await gzip(rows[0].mvt));
   })
 );
 
@@ -110,10 +128,6 @@ app.use(function (err, req, res, next) {
 const tileRequestQueue = new PQueue({ concurrency: 3 });
 
 async function cacheGet(uuid, z, x, y) {
-  assert(Number.isInteger(z));
-  assert(Number.isInteger(x));
-  assert(Number.isInteger(y));
-
   try {
     return await fs.promises.readFile(
       `${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/${y}.png`
@@ -128,10 +142,6 @@ async function cacheGet(uuid, z, x, y) {
 }
 
 async function cachePut(tile, uuid, z, x, y) {
-  assert(Number.isInteger(z));
-  assert(Number.isInteger(x));
-  assert(Number.isInteger(y));
-
   if (!fs.existsSync(`${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/`)) {
     fs.mkdirSync(`${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/`, {
       recursive: true,
@@ -145,10 +155,6 @@ async function cachePut(tile, uuid, z, x, y) {
 }
 
 async function downloadTile(uuid, z, x, y) {
-  assert(Number.isInteger(z));
-  assert(Number.isInteger(x));
-  assert(Number.isInteger(y));
-
   const tile = await tileRequestQueue.add(() =>
     got(`https://tiles.openaerialmap.org/${uuid}/${z}/${x}/${y}.png`, {
       throwHttpErrors: true,
@@ -168,10 +174,6 @@ function pixelSizeAtZoom(z) {
 }
 
 function fromChildren(tiles) {
-  for (const tile of tiles) {
-    assert(Buffer.isBuffer(tile));
-  }
-
   return sharp({
     create: {
       width: TILE_SIZE,
@@ -207,10 +209,6 @@ function fromChildren(tiles) {
 }
 
 async function source(uuid, z, x, y) {
-  assert(Number.isInteger(z));
-  assert(Number.isInteger(x));
-  assert(Number.isInteger(y));
-
   const { rows } = await db.query(
     `with oam_meta as (
         select
@@ -223,10 +221,11 @@ async function source(uuid, z, x, y) {
       )
       select true
       from oam_meta
-      where ST_TileEnvelope(${z}, ${x}, ${y}) && ST_Transform(geom, 3857)
-        and ST_Area(ST_Transform(geom, 3857)) > ${pixelSizeAtZoom(z)}
-        and uuid ~ '${uuid}' 
-      order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`
+      where ST_TileEnvelope($1, $2, $3) && ST_Transform(geom, 3857)
+        and ST_Area(ST_Transform(geom, 3857)) > $4
+        and uuid ~ $5
+      order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`,
+    [z, x, y, pixelSizeAtZoom(z), uuid]
   );
   if (!rows.length) {
     return null;
@@ -264,10 +263,6 @@ async function source(uuid, z, x, y) {
 }
 
 async function mosaic(z, x, y) {
-  assert(Number.isInteger(z));
-  assert(Number.isInteger(x));
-  assert(Number.isInteger(y));
-
   let tile = await cacheGet("__mosaic__", z, x, y);
   if (tile) {
     return tile;
@@ -304,8 +299,9 @@ async function mosaic(z, x, y) {
         )
         select uuid
         from oam_meta
-        where ST_TileEnvelope(${z}, ${x}, ${y}) && ST_Transform(geom, 3857)
-        order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`
+        where ST_TileEnvelope($1, $2, $3) && ST_Transform(geom, 3857)
+        order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`,
+      [z, x, y]
     );
 
     const sources = [];
@@ -345,7 +341,9 @@ async function mosaic(z, x, y) {
 async function main() {
   try {
     await db.connect();
-    app.listen(7802);
+    app.listen(PORT, () => {
+      console.log(`mosaic-tiler server is listening on port ${PORT}`);
+    });
   } catch (err) {
     console.error(err);
     process.exit(1);
