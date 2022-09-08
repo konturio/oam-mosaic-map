@@ -36,7 +36,7 @@ spec:
           - name: BASE_URL
             value: https://raster-tiler.k8s-01.konturlabs.com
           - name: TILES_CACHE_DIR_PATH
-            value: ./tiles
+            value: /tiles
           - name: PORT
             value: 8080
           - name: PGHOST
@@ -75,7 +75,7 @@ spec:
               port: http
               scheme: HTTP
           volumeMounts:
-          - mountPath: /tmp/raster-tiler
+          - mountPath: /tiles
             name: raster-tiler-storage-vol
             readOnly: false
       volumes:
