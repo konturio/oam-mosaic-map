@@ -10,12 +10,14 @@ import cors from "cors";
 import zlib from "zlib";
 import uniqueString from "unique-string";
 import PQueue from "p-queue";
+import bunyan from "bunyan";
 
 dotenv.config({ path: ".env" });
 
 const BASE_URL = process.env.BASE_URL;
 const TILE_SIZE = 256;
 const TILES_CACHE_DIR_PATH = process.env.TILES_CACHE_DIR_PATH;
+const LOG_DIRECTORY = process.env.LOG_DIRECTORY;
 const TMP_DIR_PATH = process.env.TMP_DIR_PATH || "/tmp";
 
 const app = express();
@@ -26,12 +28,23 @@ app.use(
 );
 app.use(cors());
 
+let logger = bunyan.createLogger({
+  name: 'oam-tiler',
+  streams: [{
+      type: 'rotating-file',
+      path: LOG_DIRECTORY  + "/error-oam-tiler.log",
+      period: '6h',
+      count: 10
+  }]
+});
+
 function wrapAsyncCallback(callback) {
   return (req, res, next) => {
     try {
       callback(req, res, next).catch(next);
     } catch (err) {
       console.log(">err", err);
+      logger.error(err);
       next(err);
     }
   };
