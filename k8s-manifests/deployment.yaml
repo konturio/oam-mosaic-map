@@ -34,11 +34,11 @@ spec:
           image: nexus.kontur.io:8084/konturdev/raster-tiler
           env:
           - name: BASE_URL
-            value: https://raster-tiler.k8s-01.konturlabs.com
+            value: 'https://raster-tiler.k8s-01.konturlabs.com'
           - name: TILES_CACHE_DIR_PATH
             value: /tiles
           - name: PORT
-            value: 8080
+            value: '8080'
           - name: PGHOST
             value: db.kontur.io
           - name: PGUSER
