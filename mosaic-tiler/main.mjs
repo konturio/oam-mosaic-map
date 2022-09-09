@@ -22,7 +22,11 @@ const TMP_DIR_PATH = process.env.TMP_DIR_PATH || "/tmp";
 const gzip = promisify(zlib.gzip);
 
 const app = express();
-const db = new pg.Client();
+const db = new pg.Client({
+  ssl: {
+    rejectUnauthorized: false,
+  },
+});
 
 app.use(
   morgan(":method :url :status :res[content-length] - :response-time ms")

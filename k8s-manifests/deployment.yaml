@@ -39,6 +39,8 @@ spec:
             value: /tiles
           - name: PORT
             value: '8080'
+          - name: PGDATABASE
+            value: layers-db
           - name: PGHOST
             value: milan.k8s-01.kontur.io
           - name: PGUSER
