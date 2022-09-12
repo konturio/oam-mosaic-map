@@ -128,7 +128,18 @@ app.use(function (err, req, res, next) {
   next;
 });
 
-const tileRequestQueue = new PQueue({ concurrency: 3 });
+const tileRequestQueue = new PQueue({ concurrency: 20 });
+const activeTileRequests = new Map();
+
+setInterval(() => {
+  console.log(
+    ">tile request queue size",
+    tileRequestQueue.size,
+    "should match",
+    activeTileRequests.size
+  );
+  console.log(">image processing", sharp.counters());
+}, 1000);
 
 async function cacheGet(uuid, z, x, y) {
   try {
@@ -158,12 +169,24 @@ async function cachePut(tile, uuid, z, x, y) {
 }
 
 async function downloadTile(uuid, z, x, y) {
-  const tile = await tileRequestQueue.add(() =>
-    got(`https://tiles.openaerialmap.org/${uuid}/${z}/${x}/${y}.png`, {
-      throwHttpErrors: true,
-      retry: { limit: 3 },
-    }).buffer()
-  );
+  const url = `https://tiles.openaerialmap.org/${uuid}/${z}/${x}/${y}.png`;
+  if (activeTileRequests.get(url)) {
+    return activeTileRequests.get(url);
+  }
+
+  const request = tileRequestQueue
+    .add(() =>
+      got(url, {
+        throwHttpErrors: true,
+        retry: { limit: 3 },
+      }).buffer()
+    )
+    .finally(() => {
+      activeTileRequests.delete(url);
+    });
+
+  activeTileRequests.set(url, request);
+  const tile = await request;
 
   if (!tile.length) {
     return null;
@@ -176,7 +199,37 @@ function pixelSizeAtZoom(z) {
   return ((20037508.342789244 / 512) * 2) / 2 ** z;
 }
 
-function fromChildren(tiles) {
+async function fromChildren(tiles) {
+  const resizedTiles = await Promise.all(
+    tiles.map((tile) => {
+      return (
+        tile &&
+        tile.length &&
+        sharp(tile)
+          .resize({ width: TILE_SIZE / 2, height: TILE_SIZE / 2 })
+          .toBuffer()
+      );
+    })
+  );
+
+  const composite = [];
+  if (resizedTiles[0] && resizedTiles[0].length) {
+    composite.push({ input: resizedTiles[0], top: 0, left: 0 });
+  }
+  if (resizedTiles[1] && resizedTiles[1].length) {
+    composite.push({ input: resizedTiles[1], top: 0, left: TILE_SIZE / 2 });
+  }
+  if (resizedTiles[2] && resizedTiles[2].length) {
+    composite.push({ input: resizedTiles[2], top: TILE_SIZE / 2, left: 0 });
+  }
+  if (resizedTiles[3] && resizedTiles[3].length) {
+    composite.push({
+      input: resizedTiles[3],
+      top: TILE_SIZE / 2,
+      left: TILE_SIZE / 2,
+    });
+  }
+
   return sharp({
     create: {
       width: TILE_SIZE,
@@ -185,28 +238,7 @@ function fromChildren(tiles) {
       background: { r: 0, g: 0, b: 0, alpha: 0 },
     },
   })
-    .composite([
-      {
-        input: tiles[0],
-        top: 0,
-        left: 0,
-      },
-      {
-        input: tiles[1],
-        top: 0,
-        left: TILE_SIZE / 2,
-      },
-      {
-        input: tiles[2],
-        top: TILE_SIZE / 2,
-        left: 0,
-      },
-      {
-        input: tiles[3],
-        top: TILE_SIZE / 2,
-        left: TILE_SIZE / 2,
-      },
-    ])
+    .composite(composite)
     .png()
     .toBuffer();
 }
@@ -252,12 +284,7 @@ async function source(uuid, z, x, y) {
     ];
 
     const tiles = await Promise.all(
-      children.map(async ({ z, x, y }) => {
-        const tile = await mosaic(z, x, y);
-        return sharp(tile)
-          .resize({ width: TILE_SIZE / 2, height: TILE_SIZE / 2 })
-          .toBuffer();
-      })
+      children.map(({ z, x, y }) => source(uuid, z, x, y))
     );
 
     tile = await fromChildren(tiles);
@@ -273,8 +300,9 @@ async function mosaic(z, x, y) {
   if (tile) {
     return tile;
   }
+  // let tile;
 
-  if (z < 11) {
+  if (z < 9) {
     const children = [
       { z: z + 1, x: x * 2, y: y * 2 },
       { z: z + 1, x: x * 2 + 1, y: y * 2 },
@@ -283,12 +311,7 @@ async function mosaic(z, x, y) {
     ];
 
     const tiles = await Promise.all(
-      children.map(async ({ z, x, y }) => {
-        const tile = await mosaic(z, x, y);
-        return sharp(tile)
-          .resize({ width: TILE_SIZE / 2, height: TILE_SIZE / 2 })
-          .toBuffer();
-      })
+      children.map(({ z, x, y }) => mosaic(z, x, y))
     );
 
     tile = await fromChildren(tiles);
@@ -334,9 +357,11 @@ async function mosaic(z, x, y) {
       },
     })
       .composite(
-        tiles.map((tile) => {
-          return { input: tile, top: 0, left: 0 };
-        })
+        tiles
+          .filter((tile) => tile && tile.length)
+          .map((tile) => {
+            return { input: tile, top: 0, left: 0 };
+          })
       )
       .png()
       .toBuffer();
