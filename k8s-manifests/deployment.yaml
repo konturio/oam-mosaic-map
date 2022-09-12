@@ -38,7 +38,7 @@ spec:
           - name: TILES_CACHE_DIR_PATH
             value: /tiles
           - name: PORT
-            value: '8080'
+            value: '80'
           - name: PGDATABASE
             value: layers-db
           - name: PGHOST
@@ -55,7 +55,7 @@ spec:
                 key: password
           ports:
           - name: http
-            containerPort: 8080
+            containerPort: 80
             protocol: TCP
           resources:
             requests:
