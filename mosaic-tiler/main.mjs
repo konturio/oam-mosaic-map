@@ -199,32 +199,35 @@ function pixelSizeAtZoom(z) {
   return ((20037508.342789244 / 512) * 2) / 2 ** z;
 }
 
+function downscale(tile) {
+  return sharp(tile)
+    .resize({ width: TILE_SIZE / 2, height: TILE_SIZE / 2 })
+    .toBuffer();
+}
+
 async function fromChildren(tiles) {
-  const resizedTiles = await Promise.all(
-    tiles.map((tile) => {
-      return (
-        tile &&
-        tile.length &&
-        sharp(tile)
-          .resize({ width: TILE_SIZE / 2, height: TILE_SIZE / 2 })
-          .toBuffer()
-      );
-    })
-  );
+  const upperLeft = tiles[0];
+  const upperRight = tiles[1];
+  const lowerLeft = tiles[2];
+  const lowerRight = tiles[3];
 
   const composite = [];
-  if (resizedTiles[0] && resizedTiles[0].length) {
-    composite.push({ input: resizedTiles[0], top: 0, left: 0 });
+  if (upperLeft && upperLeft.length) {
+    const downscaled = await downscale(upperLeft);
+    composite.push({ input: downscaled, top: 0, left: 0 });
   }
-  if (resizedTiles[1] && resizedTiles[1].length) {
-    composite.push({ input: resizedTiles[1], top: 0, left: TILE_SIZE / 2 });
+  if (upperRight && upperRight.length) {
+    const downscaled = await downscale(upperRight);
+    composite.push({ input: downscaled, top: 0, left: TILE_SIZE / 2 });
   }
-  if (resizedTiles[2] && resizedTiles[2].length) {
-    composite.push({ input: resizedTiles[2], top: TILE_SIZE / 2, left: 0 });
+  if (lowerLeft && lowerLeft.length) {
+    const downscaled = await downscale(lowerLeft);
+    composite.push({ input: downscaled, top: TILE_SIZE / 2, left: 0 });
   }
-  if (resizedTiles[3] && resizedTiles[3].length) {
+  if (lowerRight && lowerRight.length) {
+    const downscaled = await downscale(lowerRight);
     composite.push({
-      input: resizedTiles[3],
+      input: downscaled,
       top: TILE_SIZE / 2,
       left: TILE_SIZE / 2,
     });
@@ -244,6 +247,11 @@ async function fromChildren(tiles) {
 }
 
 async function source(uuid, z, x, y) {
+  let tile = await cacheGet(uuid, z, x, y);
+  if (tile) {
+    return tile;
+  }
+
   const dbClient = await db.getClient();
   const { rows } = await dbClient
     .query(
@@ -269,23 +277,14 @@ async function source(uuid, z, x, y) {
     return null;
   }
 
-  let tile = await cacheGet(uuid, z, x, y);
-  if (tile) {
-    return tile;
-  }
-
   tile = await downloadTile(uuid, z, x, y);
   if (!tile) {
-    const children = [
-      { z: z + 1, x: x * 2, y: y * 2 },
-      { z: z + 1, x: x * 2 + 1, y: y * 2 },
-      { z: z + 1, x: x * 2, y: y * 2 + 1 },
-      { z: z + 1, x: x * 2 + 1, y: y * 2 + 1 },
-    ];
-
-    const tiles = await Promise.all(
-      children.map(({ z, x, y }) => source(uuid, z, x, y))
-    );
+    const tiles = await Promise.all([
+      source(uuid, z + 1, x * 2, y * 2),
+      source(uuid, z + 1, x * 2 + 1, y * 2),
+      source(uuid, z + 1, x * 2, y * 2 + 1),
+      source(uuid, z + 1, x * 2 + 1, y * 2 + 1),
+    ]);
 
     tile = await fromChildren(tiles);
   }
@@ -300,19 +299,14 @@ async function mosaic(z, x, y) {
   if (tile) {
     return tile;
   }
-  // let tile;
 
-  if (z < 9) {
-    const children = [
-      { z: z + 1, x: x * 2, y: y * 2 },
-      { z: z + 1, x: x * 2 + 1, y: y * 2 },
-      { z: z + 1, x: x * 2, y: y * 2 + 1 },
-      { z: z + 1, x: x * 2 + 1, y: y * 2 + 1 },
-    ];
-
-    const tiles = await Promise.all(
-      children.map(({ z, x, y }) => mosaic(z, x, y))
-    );
+  if (z < 10) {
+    const tiles = await Promise.all([
+      mosaic(z + 1, x * 2, y * 2),
+      mosaic(z + 1, x * 2 + 1, y * 2),
+      mosaic(z + 1, x * 2, y * 2 + 1),
+      mosaic(z + 1, x * 2 + 1, y * 2 + 1),
+    ]);
 
     tile = await fromChildren(tiles);
   } else {
@@ -347,6 +341,7 @@ async function mosaic(z, x, y) {
     }
 
     const tiles = await Promise.all(sources);
+    console.log('>tiles', tiles);
 
     tile = await sharp({
       create: {
