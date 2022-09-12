@@ -17,7 +17,7 @@ const PORT = process.env.PORT;
 const BASE_URL = process.env.BASE_URL;
 const TILE_SIZE = 256;
 const TILES_CACHE_DIR_PATH = process.env.TILES_CACHE_DIR_PATH;
-const TMP_DIR_PATH = process.env.TMP_DIR_PATH || "/tmp";
+const TMP_DIR_PATH = TILES_CACHE_DIR_PATH + "/tmp";
 
 const gzip = promisify(zlib.gzip);
 
@@ -344,6 +344,10 @@ async function mosaic(z, x, y) {
 
 async function main() {
   try {
+    if (!fs.existsSync(TMP_DIR_PATH)) {
+      fs.mkdirSync(TMP_DIR_PATH, { recursive: true });
+    }
+
     await db.connect();
     app.listen(PORT, () => {
       console.log(`mosaic-tiler server is listening on port ${PORT}`);
