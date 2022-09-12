@@ -2,7 +2,7 @@ import { promisify } from "util";
 import fs from "fs";
 import dotenv from "dotenv";
 import sharp from "sharp";
-import pg from "pg";
+import * as db from "./db.mjs";
 import got from "got";
 import express from "express";
 import morgan from "morgan";
@@ -22,11 +22,6 @@ const TMP_DIR_PATH = TILES_CACHE_DIR_PATH + "/tmp";
 const gzip = promisify(zlib.gzip);
 
 const app = express();
-const db = new pg.Client({
-  ssl: {
-    rejectUnauthorized: false,
-  },
-});
 
 app.use(
   morgan(":method :url :status :res[content-length] - :response-time ms")
@@ -88,8 +83,11 @@ app.get(
       return res.status(404).send("Out of bounds");
     }
 
-    const { rows } = await db.query(
-      `with oam_meta as (
+    const dbClient = await db.getClient();
+
+    const { rows } = await dbClient
+      .query(
+        `with oam_meta as (
          select geom from public.layers_features
          where layer_id = (select id from public.layers where public_id = 'openaerialmap')
        ),
@@ -104,10 +102,11 @@ app.get(
       )
       select ST_AsMVT(mvtgeom.*) as mvt
       from mvtgeom`,
-      [z, x, y, z, x, y]
-    );
+        [z, x, y, z, x, y]
+      )
+      .finally(() => dbClient.release());
     if (rows.length === 0) {
-      return res.status(204);
+      return res.status(204).end();
     }
 
     res.writeHead(200, { "Content-Encoding": "gzip" });
@@ -213,8 +212,10 @@ function fromChildren(tiles) {
 }
 
 async function source(uuid, z, x, y) {
-  const { rows } = await db.query(
-    `with oam_meta as (
+  const dbClient = await db.getClient();
+  const { rows } = await dbClient
+    .query(
+      `with oam_meta as (
         select
           properties->>'gsd' as resolution_in_meters, 
           properties->>'uploaded_at' as uploaded_at, 
@@ -229,8 +230,9 @@ async function source(uuid, z, x, y) {
         and ST_Area(ST_Transform(geom, 3857)) > $4
         and uuid ~ $5
       order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`,
-    [z, x, y, pixelSizeAtZoom(z), uuid]
-  );
+      [z, x, y, pixelSizeAtZoom(z), uuid]
+    )
+    .finally(() => dbClient.release());
   if (!rows.length) {
     return null;
   }
@@ -291,8 +293,10 @@ async function mosaic(z, x, y) {
 
     tile = await fromChildren(tiles);
   } else {
-    const { rows } = await db.query(
-      `with oam_meta as (
+    const dbClient = await db.getClient();
+    const { rows } = await dbClient
+      .query(
+        `with oam_meta as (
           select
               properties->>'gsd' as resolution_in_meters, 
               properties->>'uploaded_at' as uploaded_at, 
@@ -305,8 +309,9 @@ async function mosaic(z, x, y) {
         from oam_meta
         where ST_TileEnvelope($1, $2, $3) && ST_Transform(geom, 3857)
         order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`,
-      [z, x, y]
-    );
+        [z, x, y]
+      )
+      .finally(() => dbClient.release());
 
     const sources = [];
     for (const row of rows) {
@@ -343,18 +348,22 @@ async function mosaic(z, x, y) {
 }
 
 async function main() {
+  let dbClient;
   try {
     if (!fs.existsSync(TMP_DIR_PATH)) {
       fs.mkdirSync(TMP_DIR_PATH, { recursive: true });
     }
 
-    await db.connect();
+    // await db.pool.connect();
+    dbClient = await db.getClient();
     app.listen(PORT, () => {
       console.log(`mosaic-tiler server is listening on port ${PORT}`);
     });
   } catch (err) {
     console.error(err);
     process.exit(1);
+  } finally {
+    dbClient.release();
   }
 }
 

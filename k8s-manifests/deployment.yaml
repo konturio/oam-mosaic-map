@@ -59,11 +59,11 @@ spec:
             protocol: TCP
           resources:
             requests:
-              memory: 256Mi
-              cpu: 100m
+              memory: 8Gi
+              # cpu: 100m
             limits:
-              memory: 1Gi
-              cpu: 500m
+              memory: 16Gi
+              # cpu: 500m
           livenessProbe:
             periodSeconds: 60
             httpGet:
