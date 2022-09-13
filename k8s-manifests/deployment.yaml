@@ -31,16 +31,24 @@ spec:
     spec:
       containers:
         - name: raster-tiler-server
-          image: nginx:1.19
+          image: nexus.kontur.io:8084/konturdev/raster-tiler
           env:
-          - name: DB_HOST
-            value: db.kontur.io
-          - name: DB_USERNAME
+          - name: BASE_URL
+            value: 'https://raster-tiler.k8s-01.konturlabs.com'
+          - name: TILES_CACHE_DIR_PATH
+            value: /tiles
+          - name: PORT
+            value: '80'
+          - name: PGDATABASE
+            value: layers-db
+          - name: PGHOST
+            value: milan.k8s-01.kontur.io
+          - name: PGUSER
             valueFrom:
               secretKeyRef:
                 name: raster-tiler
                 key: username
-          - name: DB_PASSWORD
+          - name: PGPASSWORD
             valueFrom:
               secretKeyRef:
                 name: raster-tiler
@@ -51,25 +59,25 @@ spec:
             protocol: TCP
           resources:
             requests:
-              memory: 256Mi
-              cpu: 100m
+              memory: 8Gi
+              # cpu: 100m
             limits:
-              memory: 1Gi
-              cpu: 500m
+              memory: 16Gi
+              # cpu: 500m
           livenessProbe:
             periodSeconds: 60
             httpGet:
-              path: /
+              path: /health
               port: http
               scheme: HTTP
           readinessProbe:
             periodSeconds: 60
             httpGet:
-              path: /
+              path: /health
               port: http
               scheme: HTTP
           volumeMounts:
-          - mountPath: /tmp/raster-tiler
+          - mountPath: /tiles
             name: raster-tiler-storage-vol
             readOnly: false
       volumes:
