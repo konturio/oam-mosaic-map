@@ -28,6 +28,11 @@ app.use(
 );
 app.use(cors());
 
+process.on("unhandledRejection", (error) => {
+  console.log(">>>unhandledRejection", error.message);
+  process.exit(1);
+});
+
 function wrapAsyncCallback(callback) {
   return (req, res, next) => {
     try {
@@ -175,24 +180,24 @@ async function downloadTile(uuid, z, x, y) {
   }
 
   const request = tileRequestQueue
-    .add(() =>
-      got(url, {
+    .add(async () => {
+      const tile = await got(url, {
         throwHttpErrors: true,
         retry: { limit: 3 },
-      }).buffer()
-    )
+      }).buffer();
+
+      if (!tile.length) {
+        return null;
+      }
+
+      return tile;
+    })
     .finally(() => {
       activeTileRequests.delete(url);
     });
 
   activeTileRequests.set(url, request);
-  const tile = await request;
-
-  if (!tile.length) {
-    return null;
-  }
-
-  return tile;
+  return request;
 }
 
 function pixelSizeAtZoom(z) {
@@ -247,6 +252,10 @@ async function fromChildren(tiles) {
 }
 
 async function source(uuid, z, x, y) {
+  if (z > 24) {
+    return null;
+  }
+
   let tile = await cacheGet(uuid, z, x, y);
   if (tile) {
     return tile;
@@ -341,7 +350,6 @@ async function mosaic(z, x, y) {
     }
 
     const tiles = await Promise.all(sources);
-    console.log('>tiles', tiles);
 
     tile = await sharp({
       create: {
