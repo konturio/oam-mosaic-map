@@ -1,10 +1,15 @@
 import pg from "pg";
 
 const pool = new pg.Pool({
+  poolSize: 30,
   ssl: {
     rejectUnauthorized: false,
   },
 });
+
+function getWaitingCount() {
+  return pool.waitingCount;
+}
 
 async function query(text, params) {
   const start = Date.now();
@@ -48,4 +53,4 @@ async function getClient() {
   return client;
 }
 
-export { query, getClient };
+export { query, getClient, getWaitingCount };

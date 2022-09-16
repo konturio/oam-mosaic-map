@@ -56,8 +56,8 @@ app.get(
       version: "1.0.0",
       scheme: "xyz",
       tiles: [`${BASE_URL}/tiles/{z}/{x}/{y}.png`],
-      minzoom: 5,
-      maxzoom: 20,
+      minzoom: 1,
+      maxzoom: 24,
       center: [27.580661773681644, 53.85617102825757, 13],
     });
   })
@@ -78,6 +78,14 @@ app.get(
   })
 );
 
+let mvtConnection = null;
+async function getMvtConnection() {
+  if (!mvtConnection) {
+    mvtConnection = await db.getClient();
+  }
+  return mvtConnection;
+}
+
 app.get(
   "/outlines/:z(\\d+)/:x(\\d+)/:y(\\d+).mvt",
   wrapAsyncCallback(async (req, res) => {
@@ -88,11 +96,12 @@ app.get(
       return res.status(404).send("Out of bounds");
     }
 
-    const dbClient = await db.getClient();
+    // const dbClient = await db.getClient();
+    const dbClient = await getMvtConnection();
 
-    const { rows } = await dbClient
-      .query(
-        `with oam_meta as (
+    const { rows } = await dbClient.query({
+      name: "mvt-outlines",
+      text: `with oam_meta as (
          select geom from public.layers_features
          where layer_id = (select id from public.layers where public_id = 'openaerialmap')
        ),
@@ -107,9 +116,9 @@ app.get(
       )
       select ST_AsMVT(mvtgeom.*) as mvt
       from mvtgeom`,
-        [z, x, y, z, x, y]
-      )
-      .finally(() => dbClient.release());
+      values: [z, x, y, z, x, y],
+    });
+    // .finally(() => dbClient.release());
     if (rows.length === 0) {
       return res.status(204).end();
     }
@@ -133,7 +142,8 @@ app.use(function (err, req, res, next) {
   next;
 });
 
-const tileRequestQueue = new PQueue({ concurrency: 20 });
+// set priority equal to zoom level
+const tileRequestQueue = new PQueue({ concurrency: 100 });
 const activeTileRequests = new Map();
 
 setInterval(() => {
@@ -144,6 +154,8 @@ setInterval(() => {
     activeTileRequests.size
   );
   console.log(">image processing", sharp.counters());
+  console.log(">db pool waiting count", db.getWaitingCount());
+  // postgres query timeout
 }, 1000);
 
 async function cacheGet(uuid, z, x, y) {
@@ -167,9 +179,11 @@ async function cachePut(tile, uuid, z, x, y) {
     });
   }
 
+  const buffer = tile || Buffer.from("");
+
   const path = `${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/${y}.png`;
   const temp = `${TMP_DIR_PATH}/${uniqueString()}`;
-  await fs.promises.writeFile(temp, tile);
+  await fs.promises.writeFile(temp, buffer);
   await fs.promises.rename(temp, path);
 }
 
@@ -180,18 +194,21 @@ async function downloadTile(uuid, z, x, y) {
   }
 
   const request = tileRequestQueue
-    .add(async () => {
-      const tile = await got(url, {
-        throwHttpErrors: true,
-        retry: { limit: 3 },
-      }).buffer();
+    .add(
+      async () => {
+        const tile = await got(url, {
+          throwHttpErrors: true,
+          retry: { limit: 3 },
+        }).buffer();
 
-      if (!tile.length) {
-        return null;
+        if (!tile.length) {
+          return null;
+        }
+
+        return tile;
       }
-
-      return tile;
-    })
+      // { priority: z }
+    )
     .finally(() => {
       activeTileRequests.delete(url);
     });
@@ -251,48 +268,50 @@ async function fromChildren(tiles) {
     .toBuffer();
 }
 
-async function source(uuid, z, x, y) {
-  if (z > 24) {
-    return null;
-  }
+async function source(uuid, z, x, y, db) {
+  // if (z > 26) {
+  // return res.status(204).end();
+  // return null;
+  // }
 
   let tile = await cacheGet(uuid, z, x, y);
   if (tile) {
     return tile;
   }
 
-  const dbClient = await db.getClient();
-  const { rows } = await dbClient
-    .query(
-      `with oam_meta as (
-        select
-          properties->>'gsd' as resolution_in_meters, 
-          properties->>'uploaded_at' as uploaded_at, 
-          properties->>'uuid' as uuid, 
-          geom
-        from public.layers_features
-        where layer_id = (select id from public.layers where public_id = 'openaerialmap')
-      )
-      select true
-      from oam_meta
-      where ST_TileEnvelope($1, $2, $3) && ST_Transform(geom, 3857)
-        and ST_Area(ST_Transform(geom, 3857)) > $4
-        and uuid ~ $5
-      order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`,
-      [z, x, y, pixelSizeAtZoom(z), uuid]
-    )
-    .finally(() => dbClient.release());
-  if (!rows.length) {
-    return null;
-  }
+  // if (z < 14) {
+  //   const { rows } = await db.query({
+  //     name: "check-if-zxy-tile-has-image-with-uuid",
+  //     text: `with oam_meta as (
+  //       select
+  //         properties->>'gsd' as resolution_in_meters,
+  //         properties->>'uploaded_at' as uploaded_at,
+  //         properties->>'uuid' as uuid,
+  //         geom
+  //       from public.layers_features
+  //       where layer_id = (select id from public.layers where public_id = 'openaerialmap')
+  //     )
+  //     select true
+  //     from oam_meta
+  //     where ST_TileEnvelope($1, $2, $3) && ST_Transform(geom, 3857) and uuid ~ $4`,
+  //     values: [z, x, y, uuid],
+  //   });
+
+  //   if (!rows.length) {
+  //     await cachePut(null, uuid, z, x, y);
+  //     return null;
+  //   }
+  // }
+  // .finally(() => dbClient.release());
 
   tile = await downloadTile(uuid, z, x, y);
-  if (!tile) {
+
+  if (!tile && z <= 25) {
     const tiles = await Promise.all([
-      source(uuid, z + 1, x * 2, y * 2),
-      source(uuid, z + 1, x * 2 + 1, y * 2),
-      source(uuid, z + 1, x * 2, y * 2 + 1),
-      source(uuid, z + 1, x * 2 + 1, y * 2 + 1),
+      source(uuid, z + 1, x * 2, y * 2, db),
+      source(uuid, z + 1, x * 2 + 1, y * 2, db),
+      source(uuid, z + 1, x * 2, y * 2 + 1, db),
+      source(uuid, z + 1, x * 2 + 1, y * 2 + 1, db),
     ]);
 
     tile = await fromChildren(tiles);
@@ -309,7 +328,7 @@ async function mosaic(z, x, y) {
     return tile;
   }
 
-  if (z < 10) {
+  if (z < 9) {
     const tiles = await Promise.all([
       mosaic(z + 1, x * 2, y * 2),
       mosaic(z + 1, x * 2 + 1, y * 2),
@@ -319,10 +338,14 @@ async function mosaic(z, x, y) {
 
     tile = await fromChildren(tiles);
   } else {
-    const dbClient = await db.getClient();
-    const { rows } = await dbClient
-      .query(
-        `with oam_meta as (
+    let dbClient;
+    let tiles;
+    try {
+      dbClient = await db.getClient();
+      const { rows } = await dbClient
+        .query({
+          name: "get-image-uuid-in-zxy-tile",
+          text: `with oam_meta as (
           select
               properties->>'gsd' as resolution_in_meters, 
               properties->>'uploaded_at' as uploaded_at, 
@@ -335,21 +358,26 @@ async function mosaic(z, x, y) {
         from oam_meta
         where ST_TileEnvelope($1, $2, $3) && ST_Transform(geom, 3857)
         order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`,
-        [z, x, y]
-      )
-      .finally(() => dbClient.release());
+          values: [z, x, y],
+        })
+        .finally(() => dbClient.release());
 
-    const sources = [];
-    for (const row of rows) {
-      const uuid = row.uuid
-        .replace("http://oin-hotosm.s3.amazonaws.com/", "")
-        .replace("https://oin-hotosm.s3.amazonaws.com/", "")
-        .replace(".tif", "");
+      const sources = [];
+      for (const row of rows) {
+        const uuid = row.uuid
+          .replace("http://oin-hotosm.s3.amazonaws.com/", "")
+          .replace("https://oin-hotosm.s3.amazonaws.com/", "")
+          .replace(".tif", "");
 
-      sources.push(source(uuid, z, x, y));
+        sources.push(source(uuid, z, x, y, db));
+      }
+
+      tiles = await Promise.all(sources);
+    } finally {
+      // if (dbClient) {
+      //   dbClient.release();
+      // }
     }
-
-    const tiles = await Promise.all(sources);
 
     tile = await sharp({
       create: {
@@ -383,7 +411,7 @@ async function main() {
     }
 
     // await db.pool.connect();
-    dbClient = await db.getClient();
+    // dbClient = await db.getClient();
     app.listen(PORT, () => {
       console.log(`mosaic-tiler server is listening on port ${PORT}`);
     });
@@ -391,7 +419,7 @@ async function main() {
     console.error(err);
     process.exit(1);
   } finally {
-    dbClient.release();
+    // dbClient.release();
   }
 }
 
