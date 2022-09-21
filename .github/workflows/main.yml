@@ -1,4 +1,4 @@
---- # Time-stamp: <2022-09-20 15:57:05>
+--- # Time-stamp: <2022-09-20 15:58:15>
 
 name: 01 Building with FIXME
 
@@ -23,6 +23,6 @@ jobs:
 
           wget -q https://kontur-github-runners.s3.eu-central-1.amazonaws.com/public_resources/projects/common/2022091500.tar.xz && tar -C "$HOME" -xf 2022091500.tar.xz && rm 2022091500.tar.xz
 
-          echo '${{ secrets.NEXUS_READER_PASS }}' | docker login nexus.kontur.io:8085 -u '${{ secrets.NEXUS_READER }}' --password-stdin
+          echo '${{ secrets.NEXUS_DEPLOYER_PASS }}' | docker login nexus.kontur.io:8085 -u '${{ secrets.NEXUS_DEPLOYER }}' --password-stdin
 
           echo "Doing something meaningful below (FIXME)"
