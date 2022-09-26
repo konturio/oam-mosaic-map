@@ -17,7 +17,7 @@ dotenv.config({ path: ".env" });
 
 const PORT = process.env.PORT;
 const BASE_URL = process.env.BASE_URL;
-// const TILE_SIZE = 256;
+const TITILER_BASE_URL = process.env.TITILER_BASE_URL;
 const TILE_SIZE = 512;
 const TILES_CACHE_DIR_PATH = process.env.TILES_CACHE_DIR_PATH;
 const TMP_DIR_PATH = TILES_CACHE_DIR_PATH + "/tmp";
@@ -77,9 +77,8 @@ app.get(
     }
 
     const tile = await mosaic(z, x, y);
-    const compressedTile = await compressTile(tile);
     res.type("png");
-    res.end(compressedTile);
+    res.end(tile);
   })
 );
 
@@ -199,6 +198,15 @@ function cachePutTile(tile, key, z, x, y) {
   return cachePut(tile, `${key}/${z}/${x}/${y}.png`);
 }
 
+function keyFromS3Url(url) {
+  return url
+    .replace("http://oin-hotosm.s3.amazonaws.com/", "")
+    .replace("https://oin-hotosm.s3.amazonaws.com/", "")
+    .replace("http://oin-hotosm-staging.s3.amazonaws.com/", "")
+    .replace("https://oin-hotosm-staging.s3.amazonaws.com/", "")
+    .replace(".tif", "");
+}
+
 async function fetchTile(url) {
   const responsePromise = got(url, {
     throwHttpErrors: false,
@@ -229,23 +237,19 @@ async function enqueueTileFetching(uuid, z, x, y) {
 }
 
 async function fetchTileMetadata(uuid) {
-  const key = uuid
-    .replace("http://oin-hotosm.s3.amazonaws.com/", "")
-    .replace("https://oin-hotosm.s3.amazonaws.com/", "")
-    .replace("http://oin-hotosm-staging.s3.amazonaws.com/", "")
-    .replace(".tif", "");
+  const key = keyFromS3Url(uuid);
 
   let meta = await cacheGet(`__meta__/${key}.json`);
   if (meta) {
     return JSON.parse(meta.toString());
   }
 
-  const url = new URL("https://geocint.kontur.io/titiler/cog/info");
+  const url = new URL(`${TITILER_BASE_URL}/cog/info`);
   url.searchParams.append("url", uuid);
   meta = await got(url.href).json();
 
   const tileUrl = new URL(
-    "https://geocint.kontur.io/titiler/cog/tiles/WebMercatorQuad/___z___/___x___/___y___@2x"
+    `${TITILER_BASE_URL}/cog/tiles/WebMercatorQuad/___z___/___x___/___y___@2x`
   );
   tileUrl.searchParams.append("url", uuid);
   for (let i = 0; i < meta.band_metadata.length; ++i) {
@@ -292,12 +296,6 @@ function downscaleTile(buffer) {
   return sharp(buffer)
     .resize({ width: TILE_SIZE / 2, height: TILE_SIZE / 2 })
     .png()
-    .toBuffer();
-}
-
-function compressTile(buffer) {
-  return sharp(buffer)
-    .png({ palette: true, compressionLevel: 9, quality: 50 })
     .toBuffer();
 }
 
@@ -499,15 +497,7 @@ async function mosaic(z, x, y) {
 
     const sources = [];
     for (const row of rows) {
-      const uuid = row.uuid
-        .replace("http://oin-hotosm.s3.amazonaws.com/", "")
-        .replace("https://oin-hotosm.s3.amazonaws.com/", "")
-        .replace("http://oin-hotosm-staging.s3.amazonaws.com/", "")
-        .replace(".tif", "");
-
-      if (!uuid || uuid === "null") {
-        console.log(">>>>uuid is broken", row.uuid);
-      }
+      const uuid = keyFromS3Url(row.uuid);
 
       const meta = metas[row.uuid];
       if (!meta) {
