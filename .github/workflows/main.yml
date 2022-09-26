@@ -26,11 +26,8 @@ jobs:
 
           echo '${{ secrets.NEXUS_DEPLOYER_PASS }}' | docker login nexus.kontur.io:8085 -u '${{ secrets.NEXUS_DEPLOYER }}' --password-stdin
 
-          # echo "Build docker image"
-          # docker build -t nexus.kontur.io:8085/konturdev/raster-tiler:latest -f Dockerfile .
+          echo "Build docker image"
+          docker build -t nexus.kontur.io:8085/konturdev/raster-tiler:${GITHUB_SHA} -f Dockerfile .
 
-          # echo "Push docker image"
-          # docker push nexus.kontur.io:8085/konturdev/raster-tiler:latest
-
-          echo ${GITHUB_REF_NAME}
-          echo ${GITHUB_SHA}
+          echo "Push docker image"
+          docker push nexus.kontur.io:8085/konturdev/raster-tiler:${GITHUB_SHA}
