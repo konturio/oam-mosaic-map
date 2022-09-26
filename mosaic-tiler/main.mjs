@@ -10,12 +10,15 @@ import cors from "cors";
 import zlib from "zlib";
 import uniqueString from "unique-string";
 import PQueue from "p-queue";
+import cover from "@mapbox/tile-cover";
+import { dirname } from "path";
 
 dotenv.config({ path: ".env" });
 
 const PORT = process.env.PORT;
 const BASE_URL = process.env.BASE_URL;
-const TILE_SIZE = 256;
+// const TILE_SIZE = 256;
+const TILE_SIZE = 512;
 const TILES_CACHE_DIR_PATH = process.env.TILES_CACHE_DIR_PATH;
 const TMP_DIR_PATH = TILES_CACHE_DIR_PATH + "/tmp";
 
@@ -29,7 +32,7 @@ app.use(
 app.use(cors());
 
 process.on("unhandledRejection", (error) => {
-  console.log(">>>unhandledRejection", error.message);
+  console.log(">>>unhandledRejection", error);
   process.exit(1);
 });
 
@@ -56,8 +59,8 @@ app.get(
       version: "1.0.0",
       scheme: "xyz",
       tiles: [`${BASE_URL}/tiles/{z}/{x}/{y}.png`],
-      minzoom: 5,
-      maxzoom: 20,
+      minzoom: 0,
+      maxzoom: 24,
       center: [27.580661773681644, 53.85617102825757, 13],
     });
   })
@@ -74,9 +77,21 @@ app.get(
     }
 
     const tile = await mosaic(z, x, y);
-    res.end(tile);
+    const compressedTile = await compressTile(tile);
+    res.type("png");
+    res.end(compressedTile);
   })
 );
+
+// separate connection for mvt outlines debug endpoint to make it respond when
+// all other connection in pool are busy
+let mvtConnection = null;
+async function getMvtConnection() {
+  if (!mvtConnection) {
+    mvtConnection = await db.getClient();
+  }
+  return mvtConnection;
+}
 
 app.get(
   "/outlines/:z(\\d+)/:x(\\d+)/:y(\\d+).mvt",
@@ -88,11 +103,11 @@ app.get(
       return res.status(404).send("Out of bounds");
     }
 
-    const dbClient = await db.getClient();
+    const dbClient = await getMvtConnection();
 
-    const { rows } = await dbClient
-      .query(
-        `with oam_meta as (
+    const { rows } = await dbClient.query({
+      name: "mvt-outlines",
+      text: `with oam_meta as (
          select geom from public.layers_features
          where layer_id = (select id from public.layers where public_id = 'openaerialmap')
        ),
@@ -107,9 +122,8 @@ app.get(
       )
       select ST_AsMVT(mvtgeom.*) as mvt
       from mvtgeom`,
-        [z, x, y, z, x, y]
-      )
-      .finally(() => dbClient.release());
+      values: [z, x, y, z, x, y],
+    });
     if (rows.length === 0) {
       return res.status(204).end();
     }
@@ -133,26 +147,26 @@ app.use(function (err, req, res, next) {
   next;
 });
 
-const tileRequestQueue = new PQueue({ concurrency: 20 });
+const tileRequestQueue = new PQueue({ concurrency: 32 });
 const activeTileRequests = new Map();
 
+const metadataRequestQueue = new PQueue({ concurrency: 32 });
+
+let nodata_counter = 0;
+
 setInterval(() => {
-  console.log(
-    ">tile request queue size",
-    tileRequestQueue.size,
-    "should match",
-    activeTileRequests.size
-  );
+  console.log(">tile request queue size", tileRequestQueue.size);
+  console.log(">metadata request queue size", metadataRequestQueue.size);
   console.log(">image processing", sharp.counters());
+  console.log(">db pool waiting count", db.getWaitingCount());
+  console.log(">nodata_counter", nodata_counter);
 }, 1000);
 
-async function cacheGet(uuid, z, x, y) {
+async function cacheGet(cacheKey) {
   try {
-    return await fs.promises.readFile(
-      `${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/${y}.png`
-    );
+    return await fs.promises.readFile(`${TILES_CACHE_DIR_PATH}/${cacheKey}`);
   } catch (err) {
-    if (err.code === "ENOENT") {
+    if (err.code === "ENOENT" || err.code === "ENOTDIR") {
       return null;
     }
 
@@ -160,38 +174,52 @@ async function cacheGet(uuid, z, x, y) {
   }
 }
 
-async function cachePut(tile, uuid, z, x, y) {
-  if (!fs.existsSync(`${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/`)) {
-    fs.mkdirSync(`${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/`, {
+function cacheGetTile(key, z, x, y) {
+  return cacheGet(`${key}/${z}/${x}/${y}.png`);
+}
+
+async function cachePut(buffer, key) {
+  const path = `${TILES_CACHE_DIR_PATH}/${key}`;
+  if (!fs.existsSync(dirname(path))) {
+    fs.mkdirSync(dirname(path), {
       recursive: true,
     });
   }
 
-  const path = `${TILES_CACHE_DIR_PATH}/${uuid}/${z}/${x}/${y}.png`;
+  // create empty file if buffer param is falsy value
+  buffer = buffer || Buffer.from("");
+
+  // write into temp file and then rename to actual name to avoid read of inflight tiles from concurrent requests
   const temp = `${TMP_DIR_PATH}/${uniqueString()}`;
-  await fs.promises.writeFile(temp, tile);
+  await fs.promises.writeFile(temp, buffer);
   await fs.promises.rename(temp, path);
 }
 
-async function downloadTile(uuid, z, x, y) {
-  const url = `https://tiles.openaerialmap.org/${uuid}/${z}/${x}/${y}.png`;
+function cachePutTile(tile, key, z, x, y) {
+  return cachePut(tile, `${key}/${z}/${x}/${y}.png`);
+}
+
+async function fetchTile(url) {
+  const responsePromise = got(url, {
+    throwHttpErrors: false,
+  });
+
+  const [response, buffer] = await Promise.all([
+    responsePromise,
+    responsePromise.buffer(),
+  ]);
+
+  return { response, buffer };
+}
+
+async function enqueueTileFetching(uuid, z, x, y) {
+  const url = uuid.replace("{z}", z).replace("{x}", x).replace("{y}", y);
   if (activeTileRequests.get(url)) {
     return activeTileRequests.get(url);
   }
 
   const request = tileRequestQueue
-    .add(async () => {
-      const tile = await got(url, {
-        throwHttpErrors: true,
-        retry: { limit: 3 },
-      }).buffer();
-
-      if (!tile.length) {
-        return null;
-      }
-
-      return tile;
-    })
+    .add(() => fetchTile(url))
     .finally(() => {
       activeTileRequests.delete(url);
     });
@@ -200,13 +228,76 @@ async function downloadTile(uuid, z, x, y) {
   return request;
 }
 
-function pixelSizeAtZoom(z) {
-  return ((20037508.342789244 / 512) * 2) / 2 ** z;
+async function fetchTileMetadata(uuid) {
+  const key = uuid
+    .replace("http://oin-hotosm.s3.amazonaws.com/", "")
+    .replace("https://oin-hotosm.s3.amazonaws.com/", "")
+    .replace("http://oin-hotosm-staging.s3.amazonaws.com/", "")
+    .replace(".tif", "");
+
+  let meta = await cacheGet(`__meta__/${key}.json`);
+  if (meta) {
+    return JSON.parse(meta.toString());
+  }
+
+  const url = new URL("https://geocint.kontur.io/titiler/cog/info");
+  url.searchParams.append("url", uuid);
+  meta = await got(url.href).json();
+
+  const tileUrl = new URL(
+    "https://geocint.kontur.io/titiler/cog/tiles/WebMercatorQuad/___z___/___x___/___y___@2x"
+  );
+  tileUrl.searchParams.append("url", uuid);
+  for (let i = 0; i < meta.band_metadata.length; ++i) {
+    if (meta.colorinterp[i] != "undefined") {
+      const [idx] = meta.band_metadata[i];
+      tileUrl.searchParams.append("bidx", idx);
+    }
+  }
+
+  const result = {
+    minzoom: meta.minzoom,
+    maxzoom: meta.maxzoom,
+    tiles: [
+      tileUrl.href
+        .replace("___z___", "{z}")
+        .replace("___x___", "{x}")
+        .replace("___y___", "{y}"),
+    ],
+  };
+
+  await cachePut(Buffer.from(JSON.stringify(result)), `__meta__/${key}.json`);
+
+  return result;
 }
 
-function downscale(tile) {
-  return sharp(tile)
+const activeMetaRequests = new Map();
+function enqueueMetadataFetching(uuid) {
+  if (activeMetaRequests.get(uuid)) {
+    return activeMetaRequests.get(uuid);
+  }
+
+  const request = metadataRequestQueue
+    .add(() => fetchTileMetadata(uuid))
+    .finally(() => {
+      activeMetaRequests.delete(uuid);
+    });
+
+  activeMetaRequests.set(uuid, request);
+
+  return request;
+}
+
+function downscaleTile(buffer) {
+  return sharp(buffer)
     .resize({ width: TILE_SIZE / 2, height: TILE_SIZE / 2 })
+    .png()
+    .toBuffer();
+}
+
+function compressTile(buffer) {
+  return sharp(buffer)
+    .png({ palette: true, compressionLevel: 9, quality: 50 })
     .toBuffer();
 }
 
@@ -218,19 +309,19 @@ async function fromChildren(tiles) {
 
   const composite = [];
   if (upperLeft && upperLeft.length) {
-    const downscaled = await downscale(upperLeft);
+    const downscaled = await downscaleTile(upperLeft);
     composite.push({ input: downscaled, top: 0, left: 0 });
   }
   if (upperRight && upperRight.length) {
-    const downscaled = await downscale(upperRight);
+    const downscaled = await downscaleTile(upperRight);
     composite.push({ input: downscaled, top: 0, left: TILE_SIZE / 2 });
   }
   if (lowerLeft && lowerLeft.length) {
-    const downscaled = await downscale(lowerLeft);
+    const downscaled = await downscaleTile(lowerLeft);
     composite.push({ input: downscaled, top: TILE_SIZE / 2, left: 0 });
   }
   if (lowerRight && lowerRight.length) {
-    const downscaled = await downscale(lowerRight);
+    const downscaled = await downscaleTile(lowerRight);
     composite.push({
       input: downscaled,
       top: TILE_SIZE / 2,
@@ -251,65 +342,113 @@ async function fromChildren(tiles) {
     .toBuffer();
 }
 
-async function source(uuid, z, x, y) {
-  if (z > 24) {
+const tileCoverCache = {
+  0: new WeakMap(),
+  1: new WeakMap(),
+  2: new WeakMap(),
+  3: new WeakMap(),
+  4: new WeakMap(),
+  5: new WeakMap(),
+  6: new WeakMap(),
+  7: new WeakMap(),
+  8: new WeakMap(),
+  9: new WeakMap(),
+  10: new WeakMap(),
+  11: new WeakMap(),
+  12: new WeakMap(),
+  13: new WeakMap(),
+  14: new WeakMap(),
+  15: new WeakMap(),
+  16: new WeakMap(),
+  17: new WeakMap(),
+  18: new WeakMap(),
+  19: new WeakMap(),
+  20: new WeakMap(),
+  21: new WeakMap(),
+  22: new WeakMap(),
+  23: new WeakMap(),
+  24: new WeakMap(),
+  25: new WeakMap(),
+  26: new WeakMap(),
+  27: new WeakMap(),
+  28: new WeakMap(),
+  29: new WeakMap(),
+  30: new WeakMap(),
+};
+
+function getTileCover(geojson, zoom) {
+  if (tileCoverCache[zoom].get(geojson)) {
+    return tileCoverCache[zoom].get(geojson);
+  }
+
+  const tileCover = cover.tiles(geojson, { min_zoom: zoom, max_zoom: zoom });
+  tileCoverCache[zoom].set(geojson, tileCover);
+
+  return tileCover;
+}
+
+async function source(uuid, url, z, x, y, db, meta, geojson) {
+  if (meta.minzoom < 10) {
     return null;
   }
 
-  let tile = await cacheGet(uuid, z, x, y);
+  let tile = await cacheGetTile(uuid, z, x, y);
   if (tile) {
     return tile;
   }
+  // let tile;
 
-  const dbClient = await db.getClient();
-  const { rows } = await dbClient
-    .query(
-      `with oam_meta as (
-        select
-          properties->>'gsd' as resolution_in_meters, 
-          properties->>'uploaded_at' as uploaded_at, 
-          properties->>'uuid' as uuid, 
-          geom
-        from public.layers_features
-        where layer_id = (select id from public.layers where public_id = 'openaerialmap')
-      )
-      select true
-      from oam_meta
-      where ST_TileEnvelope($1, $2, $3) && ST_Transform(geom, 3857)
-        and ST_Area(ST_Transform(geom, 3857)) > $4
-        and uuid ~ $5
-      order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`,
-      [z, x, y, pixelSizeAtZoom(z), uuid]
-    )
-    .finally(() => dbClient.release());
-  if (!rows.length) {
+  const tileCover = getTileCover(geojson, z);
+  const intersects = tileCover.find((tile) => {
+    return tile[0] === x && tile[1] === y && tile[2] === z;
+  });
+  if (!intersects) {
+    await cachePutTile(null, uuid, z, x, y);
     return null;
   }
 
-  tile = await downloadTile(uuid, z, x, y);
-  if (!tile) {
+  if (z >= meta.minzoom && z <= meta.maxzoom) {
+    const { response, buffer } = await enqueueTileFetching(url, z, x, y);
+
+    if (response.statusCode === 204 || response.statusCode === 404) {
+      // oam tiler returns status 204 for empty tiles and titiler returns 404
+      tile = null;
+    } else if (response.statusCode === 200) {
+      tile = buffer;
+    } else if (response.statusCode === 500) {
+      // if dynamic tiler (titiler) failed to produce tile -- don't display it
+      console.log(">>>tile request failed with status 500", response);
+      tile = null;
+    } else {
+      throw new Error(
+        `>>>tile request failed with status = ${response.statusCode} uuid = ${uuid} ${z}/${x}/${y}`
+      );
+    }
+  } else if (z < meta.maxzoom) {
     const tiles = await Promise.all([
-      source(uuid, z + 1, x * 2, y * 2),
-      source(uuid, z + 1, x * 2 + 1, y * 2),
-      source(uuid, z + 1, x * 2, y * 2 + 1),
-      source(uuid, z + 1, x * 2 + 1, y * 2 + 1),
+      source(uuid, url, z + 1, x * 2, y * 2, db, meta, geojson),
+      source(uuid, url, z + 1, x * 2 + 1, y * 2, db, meta, geojson),
+      source(uuid, url, z + 1, x * 2, y * 2 + 1, db, meta, geojson),
+      source(uuid, url, z + 1, x * 2 + 1, y * 2 + 1, db, meta, geojson),
     ]);
 
     tile = await fromChildren(tiles);
+  } else {
+    return null;
   }
 
-  await cachePut(tile, uuid, z, x, y);
+  await cachePutTile(tile, uuid, z, x, y);
 
   return tile;
 }
 
 async function mosaic(z, x, y) {
-  let tile = await cacheGet("__mosaic__", z, x, y);
+  let tile = await cacheGetTile("__mosaic__", z, x, y);
   if (tile) {
     return tile;
   }
 
-  if (z < 10) {
+  if (z < 9) {
     const tiles = await Promise.all([
       mosaic(z + 1, x * 2, y * 2),
       mosaic(z + 1, x * 2 + 1, y * 2),
@@ -319,10 +458,13 @@ async function mosaic(z, x, y) {
 
     tile = await fromChildren(tiles);
   } else {
-    const dbClient = await db.getClient();
+    let dbClient;
+    let tiles;
+    dbClient = await db.getClient();
     const { rows } = await dbClient
-      .query(
-        `with oam_meta as (
+      .query({
+        name: "get-image-uuid-in-zxy-tile",
+        text: `with oam_meta as (
           select
               properties->>'gsd' as resolution_in_meters, 
               properties->>'uploaded_at' as uploaded_at, 
@@ -331,25 +473,53 @@ async function mosaic(z, x, y) {
           from public.layers_features
           where layer_id = (select id from public.layers where public_id = 'openaerialmap')
         )
-        select uuid
+        select uuid, ST_AsGeoJSON(ST_Envelope(geom)) geojson
         from oam_meta
         where ST_TileEnvelope($1, $2, $3) && ST_Transform(geom, 3857)
         order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`,
-        [z, x, y]
-      )
+        values: [z, x, y],
+      })
       .finally(() => dbClient.release());
+
+    const metas = {};
+    const metaPromises = [];
+    for (const row of rows) {
+      const f = async () => {
+        try {
+          const meta = await enqueueMetadataFetching(row.uuid);
+          metas[row.uuid] = meta;
+        } catch (err) {
+          console.log(">>>metadata fetch error", err);
+          metas[row.uuid] = null;
+        }
+      };
+      metaPromises.push(f());
+    }
+    await Promise.all(metaPromises);
 
     const sources = [];
     for (const row of rows) {
       const uuid = row.uuid
         .replace("http://oin-hotosm.s3.amazonaws.com/", "")
         .replace("https://oin-hotosm.s3.amazonaws.com/", "")
+        .replace("http://oin-hotosm-staging.s3.amazonaws.com/", "")
         .replace(".tif", "");
 
-      sources.push(source(uuid, z, x, y));
+      if (!uuid || uuid === "null") {
+        console.log(">>>>uuid is broken", row.uuid);
+      }
+
+      const meta = metas[row.uuid];
+      if (!meta) {
+        continue;
+      }
+
+      const geojson = JSON.parse(row.geojson);
+
+      sources.push(source(uuid, meta.tiles[0], z, x, y, db, meta, geojson));
     }
 
-    const tiles = await Promise.all(sources);
+    tiles = await Promise.all(sources);
 
     tile = await sharp({
       create: {
@@ -370,28 +540,23 @@ async function mosaic(z, x, y) {
       .toBuffer();
   }
 
-  await cachePut(tile, "__mosaic__", z, x, y);
+  await cachePutTile(tile, "__mosaic__", z, x, y);
 
   return tile;
 }
 
 async function main() {
-  let dbClient;
   try {
     if (!fs.existsSync(TMP_DIR_PATH)) {
       fs.mkdirSync(TMP_DIR_PATH, { recursive: true });
     }
 
-    // await db.pool.connect();
-    dbClient = await db.getClient();
     app.listen(PORT, () => {
       console.log(`mosaic-tiler server is listening on port ${PORT}`);
     });
   } catch (err) {
     console.error(err);
     process.exit(1);
-  } finally {
-    dbClient.release();
   }
 }
 
