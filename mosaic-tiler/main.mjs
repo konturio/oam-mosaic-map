@@ -76,7 +76,7 @@ app.get(
       return res.status(404).send("Out of bounds");
     }
 
-    const tile = await mosaic(z, x, y);
+    const tile = await enqueueMosaic(z, x, y);
     res.type("png");
     res.end(tile);
   })
@@ -165,16 +165,13 @@ async function cacheGet(cacheKey) {
   try {
     return await fs.promises.readFile(`${TILES_CACHE_DIR_PATH}/${cacheKey}`);
   } catch (err) {
-    if (err.code === "ENOENT" || err.code === "ENOTDIR") {
+    // if (err.code === "ENOENT" || err.code === "ENOTDIR") {
+    if (err.code === "ENOENT") {
       return null;
     }
 
     throw err;
   }
-}
-
-function cacheGetTile(key, z, x, y) {
-  return cacheGet(`${key}/${z}/${x}/${y}.png`);
 }
 
 async function cachePut(buffer, key) {
@@ -192,6 +189,10 @@ async function cachePut(buffer, key) {
   const temp = `${TMP_DIR_PATH}/${uniqueString()}`;
   await fs.promises.writeFile(temp, buffer);
   await fs.promises.rename(temp, path);
+}
+
+function cacheGetTile(key, z, x, y) {
+  return cacheGet(`${key}/${z}/${x}/${y}.png`);
 }
 
 function cachePutTile(tile, key, z, x, y) {
@@ -236,32 +237,44 @@ async function enqueueTileFetching(uuid, z, x, y) {
   return request;
 }
 
-async function fetchTileMetadata(uuid) {
-  const key = keyFromS3Url(uuid);
-
-  let meta = await cacheGet(`__meta__/${key}.json`);
-  if (meta) {
-    return JSON.parse(meta.toString());
+async function cacheGetMetadata(key) {
+  const buffer = await cacheGet(`__metadata__/${key}.json`);
+  if (buffer === null || !buffer.length) {
+    return null;
   }
 
-  const url = new URL(`${TITILER_BASE_URL}/cog/info`);
-  url.searchParams.append("url", uuid);
-  meta = await got(url.href).json();
+  return JSON.parse(buffer.toString());
+}
+
+function cachePutMetadata(metadata, key) {
+  const buffer = Buffer.from(JSON.stringify(metadata));
+  return cachePut(buffer, `__metadata__/${key}.json`);
+}
+
+async function getGeotiffMetadata(uuid) {
+  const key = keyFromS3Url(uuid);
+
+  let metadata = await cacheGetMetadata(key);
+  if (metadata === null) {
+    metadata = await enqueueMetadataFetching(uuid);
+  }
+
+  await cachePutMetadata(metadata, key);
 
   const tileUrl = new URL(
     `${TITILER_BASE_URL}/cog/tiles/WebMercatorQuad/___z___/___x___/___y___@2x`
   );
   tileUrl.searchParams.append("url", uuid);
-  for (let i = 0; i < meta.band_metadata.length; ++i) {
-    if (meta.colorinterp[i] != "undefined") {
-      const [idx] = meta.band_metadata[i];
+  for (let i = 0; i < metadata.band_metadata.length; ++i) {
+    if (metadata.colorinterp[i] != "undefined") {
+      const [idx] = metadata.band_metadata[i];
       tileUrl.searchParams.append("bidx", idx);
     }
   }
 
-  const result = {
-    minzoom: meta.minzoom,
-    maxzoom: meta.maxzoom,
+  return {
+    minzoom: metadata.minzoom,
+    maxzoom: metadata.maxzoom,
     tiles: [
       tileUrl.href
         .replace("___z___", "{z}")
@@ -269,10 +282,21 @@ async function fetchTileMetadata(uuid) {
         .replace("___y___", "{y}"),
     ],
   };
+}
 
-  await cachePut(Buffer.from(JSON.stringify(result)), `__meta__/${key}.json`);
-
-  return result;
+function fetchTileMetadata(uuid) {
+  try {
+    const url = new URL(`${TITILER_BASE_URL}/cog/info`);
+    url.searchParams.append("url", uuid);
+    return got(url.href).json();
+  } catch (err) {
+    console.log(">>>metadata fetch error", err);
+    if (err.statusCode && (err.statusCode === 404 || err.statusCode === 500)) {
+      return null;
+    } else {
+      throw err;
+    }
+  }
 }
 
 const activeMetaRequests = new Map();
@@ -299,11 +323,9 @@ function downscaleTile(buffer) {
     .toBuffer();
 }
 
+// TODO: ignore transparent tiles from input
 async function fromChildren(tiles) {
-  const upperLeft = tiles[0];
-  const upperRight = tiles[1];
-  const lowerLeft = tiles[2];
-  const lowerRight = tiles[3];
+  const [upperLeft, upperRight, lowerLeft, lowerRight] = tiles;
 
   const composite = [];
   if (upperLeft && upperLeft.length) {
@@ -367,11 +389,6 @@ const tileCoverCache = {
   23: new WeakMap(),
   24: new WeakMap(),
   25: new WeakMap(),
-  26: new WeakMap(),
-  27: new WeakMap(),
-  28: new WeakMap(),
-  29: new WeakMap(),
-  30: new WeakMap(),
 };
 
 function getTileCover(geojson, zoom) {
@@ -386,7 +403,7 @@ function getTileCover(geojson, zoom) {
 }
 
 async function source(uuid, url, z, x, y, db, meta, geojson) {
-  if (meta.minzoom < 10) {
+  if (meta.maxzoom < 9) {
     return null;
   }
 
@@ -397,6 +414,9 @@ async function source(uuid, url, z, x, y, db, meta, geojson) {
   // let tile;
 
   const tileCover = getTileCover(geojson, z);
+  if (tileCover.length > 200000) {
+    console.log(">warning tilecover.length is", tileCover.length, url);
+  }
   const intersects = tileCover.find((tile) => {
     return tile[0] === x && tile[1] === y && tile[2] === z;
   });
@@ -440,6 +460,21 @@ async function source(uuid, url, z, x, y, db, meta, geojson) {
   return tile;
 }
 
+const activeMosaicRequests = new Map();
+function enqueueMosaic(z, x, y) {
+  const key = JSON.stringify([z, x, y]);
+  if (activeMosaicRequests.has(key)) {
+    return activeMosaicRequests.get(key);
+  }
+
+  const request = mosaic(z, x, y).finally(() =>
+    activeMosaicRequests.delete(key)
+  );
+  activeMosaicRequests.set(key, request);
+
+  return request;
+}
+
 async function mosaic(z, x, y) {
   let tile = await cacheGetTile("__mosaic__", z, x, y);
   if (tile) {
@@ -448,10 +483,10 @@ async function mosaic(z, x, y) {
 
   if (z < 9) {
     const tiles = await Promise.all([
-      mosaic(z + 1, x * 2, y * 2),
-      mosaic(z + 1, x * 2 + 1, y * 2),
-      mosaic(z + 1, x * 2, y * 2 + 1),
-      mosaic(z + 1, x * 2 + 1, y * 2 + 1),
+      enqueueMosaic(z + 1, x * 2, y * 2),
+      enqueueMosaic(z + 1, x * 2 + 1, y * 2),
+      enqueueMosaic(z + 1, x * 2, y * 2 + 1),
+      enqueueMosaic(z + 1, x * 2 + 1, y * 2 + 1),
     ]);
 
     tile = await fromChildren(tiles);
@@ -479,34 +514,32 @@ async function mosaic(z, x, y) {
       })
       .finally(() => dbClient.release());
 
-    const metas = {};
-    const metaPromises = [];
-    for (const row of rows) {
-      const f = async () => {
-        try {
-          const meta = await enqueueMetadataFetching(row.uuid);
-          metas[row.uuid] = meta;
-        } catch (err) {
-          console.log(">>>metadata fetch error", err);
-          metas[row.uuid] = null;
-        }
-      };
-      metaPromises.push(f());
-    }
-    await Promise.all(metaPromises);
-
     const sources = [];
     for (const row of rows) {
-      const uuid = keyFromS3Url(row.uuid);
+      const f = async () => {
+        const key = keyFromS3Url(row.uuid);
 
-      const meta = metas[row.uuid];
-      if (!meta) {
-        continue;
-      }
+        const meta = await getGeotiffMetadata(row.uuid);
+        if (!meta) {
+          return null;
+        }
 
-      const geojson = JSON.parse(row.geojson);
+        const geojson = JSON.parse(row.geojson);
+        const tile = await source(
+          key,
+          meta.tiles[0],
+          z,
+          x,
+          y,
+          db,
+          meta,
+          geojson
+        );
 
-      sources.push(source(uuid, meta.tiles[0], z, x, y, db, meta, geojson));
+        return tile;
+      };
+
+      sources.push(f());
     }
 
     tiles = await Promise.all(sources);
