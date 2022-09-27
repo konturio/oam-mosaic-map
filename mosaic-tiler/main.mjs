@@ -76,7 +76,7 @@ app.get(
       return res.status(404).send("Out of bounds");
     }
 
-    const tile = await enqueueMosaic(z, x, y);
+    const tile = await requestMosaic(z, x, y);
     res.type("png");
     res.end(tile);
   })
@@ -279,12 +279,10 @@ async function getGeotiffMetadata(uuid) {
   return {
     minzoom: metadata.minzoom,
     maxzoom: metadata.maxzoom,
-    tiles: [
-      tileUrl.href
-        .replace("___z___", "{z}")
-        .replace("___x___", "{x}")
-        .replace("___y___", "{y}"),
-    ],
+    tileUrl: tileUrl.href
+      .replace("___z___", "{z}")
+      .replace("___x___", "{x}")
+      .replace("___y___", "{y}"),
   };
 }
 
@@ -409,7 +407,7 @@ function getTileCover(geojson, zoom) {
   return tileCover;
 }
 
-async function source(uuid, url, z, x, y, db, meta, geojson) {
+async function source(uuid, z, x, y, meta, geojson) {
   if (meta.maxzoom < 9) {
     return null;
   }
@@ -422,7 +420,7 @@ async function source(uuid, url, z, x, y, db, meta, geojson) {
 
   const tileCover = getTileCover(geojson, z);
   if (tileCover.length > 200000) {
-    console.log(">warning tilecover.length is", tileCover.length, url);
+    console.log(">warning tilecover.length is", tileCover.length, meta.tileUrl);
   }
   const intersects = tileCover.find((tile) => {
     return tile[0] === x && tile[1] === y && tile[2] === z;
@@ -433,7 +431,12 @@ async function source(uuid, url, z, x, y, db, meta, geojson) {
   }
 
   if (z >= meta.minzoom && z <= meta.maxzoom) {
-    const { response, buffer } = await enqueueTileFetching(url, z, x, y);
+    const { response, buffer } = await enqueueTileFetching(
+      meta.tileUrl,
+      z,
+      x,
+      y
+    );
 
     if (response.statusCode === 204 || response.statusCode === 404) {
       // oam tiler returns status 204 for empty tiles and titiler returns 404
@@ -451,10 +454,10 @@ async function source(uuid, url, z, x, y, db, meta, geojson) {
     }
   } else if (z < meta.maxzoom) {
     const tiles = await Promise.all([
-      source(uuid, url, z + 1, x * 2, y * 2, db, meta, geojson),
-      source(uuid, url, z + 1, x * 2 + 1, y * 2, db, meta, geojson),
-      source(uuid, url, z + 1, x * 2, y * 2 + 1, db, meta, geojson),
-      source(uuid, url, z + 1, x * 2 + 1, y * 2 + 1, db, meta, geojson),
+      source(uuid, z + 1, x * 2, y * 2, meta, geojson),
+      source(uuid, z + 1, x * 2 + 1, y * 2, meta, geojson),
+      source(uuid, z + 1, x * 2, y * 2 + 1, meta, geojson),
+      source(uuid, z + 1, x * 2 + 1, y * 2 + 1, meta, geojson),
     ]);
 
     tile = await fromChildren(tiles);
@@ -468,7 +471,7 @@ async function source(uuid, url, z, x, y, db, meta, geojson) {
 }
 
 const activeMosaicRequests = new Map();
-function enqueueMosaic(z, x, y) {
+function requestMosaic(z, x, y) {
   const key = JSON.stringify([z, x, y]);
   if (activeMosaicRequests.has(key)) {
     return activeMosaicRequests.get(key);
@@ -490,10 +493,10 @@ async function mosaic(z, x, y) {
 
   if (z < 9) {
     const tiles = await Promise.all([
-      enqueueMosaic(z + 1, x * 2, y * 2),
-      enqueueMosaic(z + 1, x * 2 + 1, y * 2),
-      enqueueMosaic(z + 1, x * 2, y * 2 + 1),
-      enqueueMosaic(z + 1, x * 2 + 1, y * 2 + 1),
+      requestMosaic(z + 1, x * 2, y * 2),
+      requestMosaic(z + 1, x * 2 + 1, y * 2),
+      requestMosaic(z + 1, x * 2, y * 2 + 1),
+      requestMosaic(z + 1, x * 2 + 1, y * 2 + 1),
     ]);
 
     tile = await fromChildren(tiles);
@@ -532,16 +535,7 @@ async function mosaic(z, x, y) {
         }
 
         const geojson = JSON.parse(row.geojson);
-        const tile = await source(
-          key,
-          meta.tiles[0],
-          z,
-          x,
-          y,
-          db,
-          meta,
-          geojson
-        );
+        const tile = await source(key, z, x, y, meta, geojson);
 
         return tile;
       };
