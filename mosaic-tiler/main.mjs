@@ -261,6 +261,10 @@ async function getGeotiffMetadata(uuid) {
 
   await cachePutMetadata(metadata, key);
 
+  if (!metadata) {
+    return null;
+  }
+
   const tileUrl = new URL(
     `${TITILER_BASE_URL}/cog/tiles/WebMercatorQuad/___z___/___x___/___y___@2x`
   );
@@ -284,14 +288,17 @@ async function getGeotiffMetadata(uuid) {
   };
 }
 
-function fetchTileMetadata(uuid) {
+async function fetchTileMetadata(uuid) {
   try {
     const url = new URL(`${TITILER_BASE_URL}/cog/info`);
     url.searchParams.append("url", uuid);
-    return got(url.href).json();
+    const metadata = await got(url.href).json();
+    return metadata;
   } catch (err) {
-    console.log(">>>metadata fetch error", err);
-    if (err.statusCode && (err.statusCode === 404 || err.statusCode === 500)) {
+    if (
+      err.response &&
+      (err.response.statusCode === 404 || err.response.statusCode === 500)
+    ) {
       return null;
     } else {
       throw err;
