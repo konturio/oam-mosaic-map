@@ -408,7 +408,7 @@ function getTileCover(geojson, zoom) {
 }
 
 async function source(uuid, z, x, y, meta, geojson) {
-  if (meta.maxzoom < 9) {
+  if (z > meta.maxzoom) {
     return null;
   }
 
@@ -491,45 +491,94 @@ async function mosaic(z, x, y) {
     return tile;
   }
 
-  if (z < 9) {
-    const tiles = await Promise.all([
-      requestMosaic(z + 1, x * 2, y * 2),
-      requestMosaic(z + 1, x * 2 + 1, y * 2),
-      requestMosaic(z + 1, x * 2, y * 2 + 1),
-      requestMosaic(z + 1, x * 2 + 1, y * 2 + 1),
-    ]);
+  const dbClient = await db.getClient();
+  const { rows } = await dbClient
+    .query({
+      name: "get-image-uuid-in-zxy-tile",
+      text: `with oam_meta as (
+        select
+            properties->>'gsd' as resolution_in_meters, 
+            properties->>'uploaded_at' as uploaded_at, 
+            properties->>'uuid' as uuid, 
+            geom
+        from public.layers_features
+        where layer_id = (select id from public.layers where public_id = 'openaerialmap')
+      )
+      select uuid, ST_AsGeoJSON(ST_Envelope(geom)) geojson
+      from oam_meta
+      where ST_TileEnvelope($1, $2, $3) && ST_Transform(geom, 3857)
+      order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`,
+      values: [z, x, y],
+    })
+    .finally(() => dbClient.release());
 
-    tile = await fromChildren(tiles);
+  const metadataByUuid = {};
+  await Promise.all(
+    rows.map((row) => {
+      const f = async () => {
+        metadataByUuid[row.uuid] = await getGeotiffMetadata(row.uuid);
+      };
+
+      return f();
+    })
+  );
+
+  if (z < 9) {
+    const sources = [];
+    for (const row of rows) {
+      const meta = metadataByUuid[row.uuid];
+      if (!meta) {
+        continue;
+      }
+
+      if (meta.maxzoom < 9) {
+        console.log(">>>uuid", row.uuid);
+        const key = keyFromS3Url(row.uuid);
+        const geojson = JSON.parse(row.geojson);
+        sources.push(source(key, z, x, y, meta, geojson));
+      }
+    }
+
+    sources.push(
+      fromChildren(
+        await Promise.all([
+          requestMosaic(z + 1, x * 2, y * 2),
+          requestMosaic(z + 1, x * 2 + 1, y * 2),
+          requestMosaic(z + 1, x * 2, y * 2 + 1),
+          requestMosaic(z + 1, x * 2 + 1, y * 2 + 1),
+        ])
+      )
+    );
+
+    const tiles = await Promise.all(sources);
+
+    tile = await sharp({
+      create: {
+        width: TILE_SIZE,
+        height: TILE_SIZE,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .composite(
+        tiles
+          .filter((tile) => tile && tile.length)
+          .map((tile) => {
+            return { input: tile, top: 0, left: 0 };
+          })
+      )
+      .png()
+      .toBuffer();
   } else {
-    let dbClient;
     let tiles;
-    dbClient = await db.getClient();
-    const { rows } = await dbClient
-      .query({
-        name: "get-image-uuid-in-zxy-tile",
-        text: `with oam_meta as (
-          select
-              properties->>'gsd' as resolution_in_meters, 
-              properties->>'uploaded_at' as uploaded_at, 
-              properties->>'uuid' as uuid, 
-              geom
-          from public.layers_features
-          where layer_id = (select id from public.layers where public_id = 'openaerialmap')
-        )
-        select uuid, ST_AsGeoJSON(ST_Envelope(geom)) geojson
-        from oam_meta
-        where ST_TileEnvelope($1, $2, $3) && ST_Transform(geom, 3857)
-        order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`,
-        values: [z, x, y],
-      })
-      .finally(() => dbClient.release());
 
     const sources = [];
     for (const row of rows) {
       const f = async () => {
         const key = keyFromS3Url(row.uuid);
 
-        const meta = await getGeotiffMetadata(row.uuid);
+        // const meta = await getGeotiffMetadata(row.uuid);
+        const meta = metadataByUuid[row.uuid];
         if (!meta) {
           return null;
         }
