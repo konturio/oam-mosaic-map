@@ -139,6 +139,11 @@ app.get(
   })
 );
 
+app.post("/purge_mosaic_cache", (req, res) => {
+  fs.rmSync(`${TILES_CACHE_DIR_PATH}/__mosaic__`);
+  res.end("Ok");
+});
+
 app.use(function (err, req, res, next) {
   console.error(err.stack);
   res.status(500);
