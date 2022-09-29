@@ -305,6 +305,7 @@ async function fetchTileMetadata(uuid) {
 }
 
 const activeMetaRequests = new Map();
+// deduplicates and limits number of concurrent calls for fetchTileMetadata function
 function enqueueMetadataFetching(uuid) {
   if (activeMetaRequests.get(uuid)) {
     return activeMetaRequests.get(uuid);
@@ -329,6 +330,7 @@ function downscaleTile(buffer) {
 }
 
 // TODO: ignore transparent tiles from input
+// produces tile from 4 underlying children tiles
 async function fromChildren(tiles) {
   const [upperLeft, upperRight, lowerLeft, lowerRight] = tiles;
 
@@ -407,6 +409,11 @@ function getTileCover(geojson, zoom) {
   return tileCover;
 }
 
+// request tile for single image
+// uuid -- s3 image url
+// z, x, y -- coordinates
+// meta -- object that contains minzoom, maxzoom and tile url template
+// geojson -- image outline
 async function source(uuid, z, x, y, meta, geojson) {
   if (z > meta.maxzoom) {
     return null;
@@ -471,6 +478,7 @@ async function source(uuid, z, x, y, meta, geojson) {
 }
 
 const activeMosaicRequests = new Map();
+// wrapper that deduplicates mosiac function calls
 function requestMosaic(z, x, y) {
   const key = JSON.stringify([z, x, y]);
   if (activeMosaicRequests.has(key)) {
@@ -485,6 +493,7 @@ function requestMosaic(z, x, y) {
   return request;
 }
 
+// request tile for mosaic
 async function mosaic(z, x, y) {
   let tile = await cacheGetTile("__mosaic__", z, x, y);
   if (tile) {
