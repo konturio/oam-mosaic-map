@@ -151,21 +151,17 @@ const activeTileRequests = new Map();
 
 const metadataRequestQueue = new PQueue({ concurrency: 32 });
 
-let nodata_counter = 0;
-
 setInterval(() => {
   console.log(">tile request queue size", tileRequestQueue.size);
   console.log(">metadata request queue size", metadataRequestQueue.size);
   console.log(">image processing", sharp.counters());
   console.log(">db pool waiting count", db.getWaitingCount());
-  console.log(">nodata_counter", nodata_counter);
 }, 1000);
 
 async function cacheGet(cacheKey) {
   try {
     return await fs.promises.readFile(`${TILES_CACHE_DIR_PATH}/${cacheKey}`);
   } catch (err) {
-    // if (err.code === "ENOENT" || err.code === "ENOTDIR") {
     if (err.code === "ENOENT") {
       return null;
     }
@@ -423,12 +419,8 @@ async function source(uuid, z, x, y, meta, geojson) {
   if (tile) {
     return tile;
   }
-  // let tile;
 
   const tileCover = getTileCover(geojson, z);
-  if (tileCover.length > 200000) {
-    console.log(">warning tilecover.length is", tileCover.length, meta.tileUrl);
-  }
   const intersects = tileCover.find((tile) => {
     return tile[0] === x && tile[1] === y && tile[2] === z;
   });
@@ -541,7 +533,6 @@ async function mosaic(z, x, y) {
       }
 
       if (meta.maxzoom < 9) {
-        console.log(">>>uuid", row.uuid);
         const key = keyFromS3Url(row.uuid);
         const geojson = JSON.parse(row.geojson);
         sources.push(source(key, z, x, y, meta, geojson));
