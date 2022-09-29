@@ -1,7 +1,7 @@
 import pg from "pg";
 
 const pool = new pg.Pool({
-  poolSize: 30,
+  poolSize: process.env.DB_POOL_SIZE || 16,
   ssl: {
     rejectUnauthorized: false,
   },
