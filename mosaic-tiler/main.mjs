@@ -210,16 +210,31 @@ function keyFromS3Url(url) {
 }
 
 async function fetchTile(url) {
-  const responsePromise = got(url, {
-    throwHttpErrors: false,
-  });
+  try {
+    const responsePromise = got(url, {
+      throwHttpErrors: true,
+    });
 
-  const [response, buffer] = await Promise.all([
-    responsePromise,
-    responsePromise.buffer(),
-  ]);
+    const [response, buffer] = await Promise.all([
+      responsePromise,
+      responsePromise.buffer(),
+    ]);
 
-  return { response, buffer };
+    if (response.statusCode === 204) {
+      return null;
+    }
+
+    return buffer;
+  } catch (err) {
+    if (
+      err.response &&
+      (err.response.statusCode === 404 || err.response.statusCode === 500)
+    ) {
+      return null;
+    } else {
+      throw err;
+    }
+  }
 }
 
 async function enqueueTileFetching(uuid, z, x, y) {
@@ -240,7 +255,7 @@ async function enqueueTileFetching(uuid, z, x, y) {
 
 async function cacheGetMetadata(key) {
   const buffer = await cacheGet(`__metadata__/${key}.json`);
-  if (buffer === null || !buffer.length) {
+  if (buffer === null) {
     return null;
   }
 
@@ -435,27 +450,7 @@ async function source(uuid, z, x, y, meta, geojson) {
   }
 
   if (z >= meta.minzoom && z <= meta.maxzoom) {
-    const { response, buffer } = await enqueueTileFetching(
-      meta.tileUrl,
-      z,
-      x,
-      y
-    );
-
-    if (response.statusCode === 204 || response.statusCode === 404) {
-      // oam tiler returns status 204 for empty tiles and titiler returns 404
-      tile = null;
-    } else if (response.statusCode === 200) {
-      tile = buffer;
-    } else if (response.statusCode === 500) {
-      // if dynamic tiler (titiler) failed to produce tile -- don't display it
-      console.log(">>>tile request failed with status 500", response);
-      tile = null;
-    } else {
-      throw new Error(
-        `>>>tile request failed with status = ${response.statusCode} uuid = ${uuid} ${z}/${x}/${y}`
-      );
-    }
+    tile = await enqueueTileFetching(meta.tileUrl, z, x, y);
   } else if (z < meta.maxzoom) {
     const tiles = await Promise.all([
       source(uuid, z + 1, x * 2, y * 2, meta, geojson),
@@ -539,8 +534,8 @@ async function mosaic(z, x, y) {
     })
   );
 
+  const tilePromises = [];
   if (z < 9) {
-    const sources = [];
     for (const row of rows) {
       const meta = metadataByUuid[row.uuid];
       if (!meta) {
@@ -550,11 +545,11 @@ async function mosaic(z, x, y) {
       if (meta.maxzoom < 9) {
         const key = keyFromS3Url(row.uuid);
         const geojson = JSON.parse(row.geojson);
-        sources.push(source(key, z, x, y, meta, geojson));
+        tilePromises.push(source(key, z, x, y, meta, geojson));
       }
     }
 
-    sources.push(
+    tilePromises.push(
       fromChildren(
         await Promise.all([
           requestMosaic(z + 1, x * 2, y * 2),
@@ -564,69 +559,38 @@ async function mosaic(z, x, y) {
         ])
       )
     );
-
-    const tiles = await Promise.all(sources);
-
-    tile = await sharp({
-      create: {
-        width: TILE_SIZE,
-        height: TILE_SIZE,
-        channels: 4,
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
-      },
-    })
-      .composite(
-        tiles
-          .filter((tile) => tile && tile.length)
-          .map((tile) => {
-            return { input: tile, top: 0, left: 0 };
-          })
-      )
-      .png()
-      .toBuffer();
   } else {
-    let tiles;
-
-    const sources = [];
     for (const row of rows) {
-      const f = async () => {
-        const key = keyFromS3Url(row.uuid);
+      const meta = metadataByUuid[row.uuid];
+      if (!meta) {
+        continue;
+      }
 
-        // const meta = await getGeotiffMetadata(row.uuid);
-        const meta = metadataByUuid[row.uuid];
-        if (!meta) {
-          return null;
-        }
-
-        const geojson = JSON.parse(row.geojson);
-        const tile = await source(key, z, x, y, meta, geojson);
-
-        return tile;
-      };
-
-      sources.push(f());
+      const key = keyFromS3Url(row.uuid);
+      const geojson = JSON.parse(row.geojson);
+      tilePromises.push(source(key, z, x, y, meta, geojson));
     }
-
-    tiles = await Promise.all(sources);
-
-    tile = await sharp({
-      create: {
-        width: TILE_SIZE,
-        height: TILE_SIZE,
-        channels: 4,
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
-      },
-    })
-      .composite(
-        tiles
-          .filter((tile) => tile && tile.length)
-          .map((tile) => {
-            return { input: tile, top: 0, left: 0 };
-          })
-      )
-      .png()
-      .toBuffer();
   }
+
+  const tiles = await Promise.all(tilePromises);
+
+  tile = await sharp({
+    create: {
+      width: TILE_SIZE,
+      height: TILE_SIZE,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite(
+      tiles
+        .filter((tile) => tile && tile.length)
+        .map((tile) => {
+          return { input: tile, top: 0, left: 0 };
+        })
+    )
+    .png()
+    .toBuffer();
 
   await cachePutTile(tile, "__mosaic__", z, x, y);
 
