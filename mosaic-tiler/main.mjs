@@ -150,32 +150,30 @@ app.get(
       return res.status(404).send("Out of bounds");
     }
 
-    // console.log(">clusters", z, x, y);
-
     const dbClient = await getClustersConnection();
 
     const { rows } = await dbClient.query({
       name: "mvt-clusters",
       text: `with invisible as (
-        select st_transform(geom, 3857) as geom from public.layers_features
-        where layer_id = (select id from public.layers where public_id = 'openaerialmap')
-        and st_area(st_transform(geom, 3857)) < pow(10 * 20037508.342789244 / 512 * 2 / pow(2, $1), 2)
-        and st_transform(geom, 3857) && ST_TileEnvelope($2, $3, $4)
-    ), clusters as (
-        select ST_ClusterKMeans(ST_Envelope(geom), 1, pow(0.2 * 20037508.342789244 / 512 * 2 / pow(2, $5), 2)) over () as cid, geom from invisible
-    ),
-    mvtgeom as (
-        select
-        ST_AsMVTGeom(
-            ST_Centroid(ST_Union(ST_Envelope(geom))),
-            ST_TileEnvelope($6, $7, $8)
-        ) geom,
-        count(*) count
-        from clusters
-        group by cid
-    )
-    select ST_AsMVT(mvtgeom.*) as mvt
-    from mvtgeom`,
+          select ST_Transform(geom, 3857) as geom from public.layers_features
+          where layer_id = (select id from public.layers where public_id = 'openaerialmap')
+          and ST_Area(ST_Transform(geom, 3857)) < pow(10 * 20037508.342789244 / 512 * 2 / pow(2, $1), 2)
+          and ST_Transform(geom, 3857) && ST_TileEnvelope($2, $3, $4)
+      ), clusters as (
+          select ST_ClusterKMeans(geom, 1, pow(0.2 * 20037508.342789244 / 512 * 2 / pow(2, $5), 2)) over () as cid, geom from invisible
+      ),
+      mvtgeom as (
+          select
+          ST_AsMVTGeom(
+              ST_GeometricMedian(ST_Collect(ST_Centroid(geom))),
+              ST_TileEnvelope($6, $7, $8)
+          ) geom,
+          count(*) count
+          from clusters
+          group by cid
+      )
+      select ST_AsMVT(mvtgeom.*) as mvt
+      from mvtgeom`,
       values: [z, z, x, y, z, z, x, y],
     });
     if (rows.length === 0) {
