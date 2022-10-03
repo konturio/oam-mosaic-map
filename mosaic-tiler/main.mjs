@@ -77,8 +77,8 @@ app.get(
     }
 
     const tile = await requestMosaic(z, x, y);
-    res.type("png");
-    res.end(tile);
+    res.type(tile.extension);
+    res.end(tile.buffer);
   })
 );
 
@@ -163,6 +163,17 @@ setInterval(() => {
   console.log(">db pool waiting count", db.getWaitingCount());
 }, 1000);
 
+class TileImage {
+  constructor(buffer, extension) {
+    this.buffer = buffer;
+    this.extension = extension;
+  }
+
+  empty() {
+    return this.buffer === null || this.buffer.length === 0;
+  }
+}
+
 async function cacheGet(cacheKey) {
   try {
     return await fs.promises.readFile(`${TILES_CACHE_DIR_PATH}/${cacheKey}`);
@@ -192,12 +203,18 @@ async function cachePut(buffer, key) {
   await fs.promises.rename(temp, path);
 }
 
-function cacheGetTile(key, z, x, y) {
-  return cacheGet(`${key}/${z}/${x}/${y}.png`);
+function cacheGetTile(key, z, x, y, extension) {
+  if (extension !== "png" && extension !== "jpg") {
+    throw new Error(".png and .jpg are the only allowed extensions");
+  }
+  return cacheGet(`${key}/${z}/${x}/${y}.${extension}`);
 }
 
-function cachePutTile(tile, key, z, x, y) {
-  return cachePut(tile, `${key}/${z}/${x}/${y}.png`);
+function cachePutTile(tile, key, z, x, y, extension) {
+  if (extension !== "png" && extension !== "jpg") {
+    throw new Error(".png and .jpg are the only allowed extensions");
+  }
+  return cachePut(tile, `${key}/${z}/${x}/${y}.${extension}`);
 }
 
 function keyFromS3Url(url) {
@@ -210,20 +227,35 @@ function keyFromS3Url(url) {
 }
 
 async function fetchTile(url) {
-  const responsePromise = got(url, {
-    throwHttpErrors: false,
-  });
+  try {
+    const responsePromise = got(url, {
+      throwHttpErrors: true,
+    });
 
-  const [response, buffer] = await Promise.all([
-    responsePromise,
-    responsePromise.buffer(),
-  ]);
+    const [response, buffer] = await Promise.all([
+      responsePromise,
+      responsePromise.buffer(),
+    ]);
 
-  return { response, buffer };
+    if (response.statusCode === 204) {
+      return null;
+    }
+
+    return buffer;
+  } catch (err) {
+    if (
+      err.response &&
+      (err.response.statusCode === 404 || err.response.statusCode === 500)
+    ) {
+      return null;
+    } else {
+      throw err;
+    }
+  }
 }
 
-async function enqueueTileFetching(uuid, z, x, y) {
-  const url = uuid.replace("{z}", z).replace("{x}", x).replace("{y}", y);
+async function enqueueTileFetching(tileUrl, z, x, y) {
+  const url = tileUrl.replace("{z}", z).replace("{x}", x).replace("{y}", y);
   if (activeTileRequests.get(url)) {
     return activeTileRequests.get(url);
   }
@@ -240,7 +272,7 @@ async function enqueueTileFetching(uuid, z, x, y) {
 
 async function cacheGetMetadata(key) {
   const buffer = await cacheGet(`__metadata__/${key}.json`);
-  if (buffer === null || !buffer.length) {
+  if (buffer === null) {
     return null;
   }
 
@@ -326,7 +358,6 @@ function enqueueMetadataFetching(uuid) {
 function downscaleTile(buffer) {
   return sharp(buffer)
     .resize({ width: TILE_SIZE / 2, height: TILE_SIZE / 2 })
-    .png()
     .toBuffer();
 }
 
@@ -336,20 +367,20 @@ async function fromChildren(tiles) {
   const [upperLeft, upperRight, lowerLeft, lowerRight] = tiles;
 
   const composite = [];
-  if (upperLeft && upperLeft.length) {
-    const downscaled = await downscaleTile(upperLeft);
+  if (!upperLeft.empty()) {
+    const downscaled = await downscaleTile(upperLeft.buffer);
     composite.push({ input: downscaled, top: 0, left: 0 });
   }
-  if (upperRight && upperRight.length) {
-    const downscaled = await downscaleTile(upperRight);
+  if (!upperRight.empty()) {
+    const downscaled = await downscaleTile(upperRight.buffer);
     composite.push({ input: downscaled, top: 0, left: TILE_SIZE / 2 });
   }
-  if (lowerLeft && lowerLeft.length) {
-    const downscaled = await downscaleTile(lowerLeft);
+  if (!lowerLeft.empty()) {
+    const downscaled = await downscaleTile(lowerLeft.buffer);
     composite.push({ input: downscaled, top: TILE_SIZE / 2, left: 0 });
   }
-  if (lowerRight && lowerRight.length) {
-    const downscaled = await downscaleTile(lowerRight);
+  if (!lowerRight.empty()) {
+    const downscaled = await downscaleTile(lowerRight.buffer);
     composite.push({
       input: downscaled,
       top: TILE_SIZE / 2,
@@ -357,7 +388,7 @@ async function fromChildren(tiles) {
     });
   }
 
-  return sharp({
+  const buffer = await sharp({
     create: {
       width: TILE_SIZE,
       height: TILE_SIZE,
@@ -368,6 +399,8 @@ async function fromChildren(tiles) {
     .composite(composite)
     .png()
     .toBuffer();
+
+  return new TileImage(buffer, "png");
 }
 
 const tileCoverCache = {
@@ -415,63 +448,43 @@ function getTileCover(geojson, zoom) {
 // z, x, y -- coordinates
 // meta -- object that contains minzoom, maxzoom and tile url template
 // geojson -- image outline
-async function source(uuid, z, x, y, meta, geojson) {
+async function source(key, z, x, y, meta, geojson) {
   if (z > meta.maxzoom) {
-    return null;
+    return new TileImage(null);
   }
 
-  let tile = await cacheGetTile(uuid, z, x, y);
-  if (tile) {
-    return tile;
+  let tileBuffer = await cacheGetTile(key, z, x, y, "png");
+  if (tileBuffer) {
+    return new TileImage(tileBuffer, "png");
   }
 
   const tileCover = getTileCover(geojson, z);
-  const intersects = tileCover.find((tile) => {
-    return tile[0] === x && tile[1] === y && tile[2] === z;
+  const intersects = tileCover.find((pos) => {
+    return pos[0] === x && pos[1] === y && pos[2] === z;
   });
   if (!intersects) {
-    await cachePutTile(null, uuid, z, x, y);
-    return null;
+    await cachePutTile(null, key, z, x, y, "png");
+    return new TileImage(null);
   }
 
   if (z >= meta.minzoom && z <= meta.maxzoom) {
-    const { response, buffer } = await enqueueTileFetching(
-      meta.tileUrl,
-      z,
-      x,
-      y
-    );
-
-    if (response.statusCode === 204 || response.statusCode === 404) {
-      // oam tiler returns status 204 for empty tiles and titiler returns 404
-      tile = null;
-    } else if (response.statusCode === 200) {
-      tile = buffer;
-    } else if (response.statusCode === 500) {
-      // if dynamic tiler (titiler) failed to produce tile -- don't display it
-      console.log(">>>tile request failed with status 500", response);
-      tile = null;
-    } else {
-      throw new Error(
-        `>>>tile request failed with status = ${response.statusCode} uuid = ${uuid} ${z}/${x}/${y}`
-      );
-    }
+    tileBuffer = await enqueueTileFetching(meta.tileUrl, z, x, y);
   } else if (z < meta.maxzoom) {
     const tiles = await Promise.all([
-      source(uuid, z + 1, x * 2, y * 2, meta, geojson),
-      source(uuid, z + 1, x * 2 + 1, y * 2, meta, geojson),
-      source(uuid, z + 1, x * 2, y * 2 + 1, meta, geojson),
-      source(uuid, z + 1, x * 2 + 1, y * 2 + 1, meta, geojson),
+      source(key, z + 1, x * 2, y * 2, meta, geojson),
+      source(key, z + 1, x * 2 + 1, y * 2, meta, geojson),
+      source(key, z + 1, x * 2, y * 2 + 1, meta, geojson),
+      source(key, z + 1, x * 2 + 1, y * 2 + 1, meta, geojson),
     ]);
 
-    tile = await fromChildren(tiles);
+    tileBuffer = (await fromChildren(tiles)).buffer;
   } else {
-    return null;
+    return new TileImage(null);
   }
 
-  await cachePutTile(tile, uuid, z, x, y);
+  await cachePutTile(tileBuffer, key, z, x, y, "png");
 
-  return tile;
+  return new TileImage(tileBuffer, "png");
 }
 
 const activeMosaicRequests = new Map();
@@ -495,9 +508,14 @@ async function mosaic(z, x, y) {
   let dbClient;
   let rows;
 
-  let tile = await cacheGetTile("__mosaic__", z, x, y);
-  if (tile) {
-    return tile;
+  let tileBuffer = await cacheGetTile("__mosaic__", z, x, y, "png");
+  if (tileBuffer) {
+    return new TileImage(tileBuffer, "png");
+  }
+
+  tileBuffer = await cacheGetTile("__mosaic__", z, x, y, "jpg");
+  if (tileBuffer) {
+    return new TileImage(tileBuffer, "jpg");
   }
 
   try {
@@ -539,8 +557,8 @@ async function mosaic(z, x, y) {
     })
   );
 
+  const tilePromises = [];
   if (z < 9) {
-    const sources = [];
     for (const row of rows) {
       const meta = metadataByUuid[row.uuid];
       if (!meta) {
@@ -550,11 +568,11 @@ async function mosaic(z, x, y) {
       if (meta.maxzoom < 9) {
         const key = keyFromS3Url(row.uuid);
         const geojson = JSON.parse(row.geojson);
-        sources.push(source(key, z, x, y, meta, geojson));
+        tilePromises.push(source(key, z, x, y, meta, geojson));
       }
     }
 
-    sources.push(
+    tilePromises.push(
       fromChildren(
         await Promise.all([
           requestMosaic(z + 1, x * 2, y * 2),
@@ -564,73 +582,49 @@ async function mosaic(z, x, y) {
         ])
       )
     );
-
-    const tiles = await Promise.all(sources);
-
-    tile = await sharp({
-      create: {
-        width: TILE_SIZE,
-        height: TILE_SIZE,
-        channels: 4,
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
-      },
-    })
-      .composite(
-        tiles
-          .filter((tile) => tile && tile.length)
-          .map((tile) => {
-            return { input: tile, top: 0, left: 0 };
-          })
-      )
-      .png()
-      .toBuffer();
   } else {
-    let tiles;
-
-    const sources = [];
     for (const row of rows) {
-      const f = async () => {
-        const key = keyFromS3Url(row.uuid);
+      const meta = metadataByUuid[row.uuid];
+      if (!meta) {
+        continue;
+      }
 
-        // const meta = await getGeotiffMetadata(row.uuid);
-        const meta = metadataByUuid[row.uuid];
-        if (!meta) {
-          return null;
-        }
-
-        const geojson = JSON.parse(row.geojson);
-        const tile = await source(key, z, x, y, meta, geojson);
-
-        return tile;
-      };
-
-      sources.push(f());
+      const key = keyFromS3Url(row.uuid);
+      const geojson = JSON.parse(row.geojson);
+      tilePromises.push(source(key, z, x, y, meta, geojson));
     }
-
-    tiles = await Promise.all(sources);
-
-    tile = await sharp({
-      create: {
-        width: TILE_SIZE,
-        height: TILE_SIZE,
-        channels: 4,
-        background: { r: 0, g: 0, b: 0, alpha: 0 },
-      },
-    })
-      .composite(
-        tiles
-          .filter((tile) => tile && tile.length)
-          .map((tile) => {
-            return { input: tile, top: 0, left: 0 };
-          })
-      )
-      .png()
-      .toBuffer();
   }
 
-  await cachePutTile(tile, "__mosaic__", z, x, y);
+  const tiles = await Promise.all(tilePromises);
 
-  return tile;
+  tileBuffer = await sharp({
+    create: {
+      width: TILE_SIZE,
+      height: TILE_SIZE,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite(
+      tiles
+        .filter((tile) => !tile.empty())
+        .map((tile) => {
+          return { input: tile.buffer, top: 0, left: 0 };
+        })
+    )
+    .png()
+    .toBuffer();
+
+  let extension = "png";
+  const tileImgStats = await sharp(tileBuffer).stats();
+  if (tileImgStats.isOpaque) {
+    extension = "jpg";
+    tileBuffer = await sharp(tileBuffer).toFormat("jpeg").toBuffer();
+  }
+
+  await cachePutTile(tileBuffer, "__mosaic__", z, x, y, extension);
+
+  return new TileImage(tileBuffer, extension);
 }
 
 async function main() {
