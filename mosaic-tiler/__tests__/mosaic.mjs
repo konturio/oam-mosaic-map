@@ -59,14 +59,24 @@ jest.unstable_mockModule("../db.mjs", () => ({
   }),
 }));
 
-jest.unstable_mockModule("../cache.mjs", () => ({
-  cacheGet: async () => {
-    return null;
-  },
-  cachePut: async () => {
-    return null;
-  },
-}));
+function createMemCache() {
+  const cache = new Map();
+
+  return {
+    async cacheGet(key) {
+      if (cache.has(key)) {
+        return cache.get(key);
+      }
+
+      return null;
+    },
+    async cachePut(buffer, key) {
+      cache.set(key, buffer);
+    },
+  };
+}
+
+jest.unstable_mockModule("../cache.mjs", createMemCache);
 
 process.env.TITILER_BASE_URL = "https://test-apps02.konturlabs.com/titiler/";
 
