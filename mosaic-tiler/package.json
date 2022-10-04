@@ -4,7 +4,8 @@
   "description": "",
   "main": "main.mjs",
   "scripts": {
-    "start": "node main.mjs"
+    "start": "node main.mjs",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
   },
   "author": "",
   "license": "ISC",
@@ -19,5 +20,8 @@
     "pg": "^8.8.0",
     "sharp": "^0.31.0",
     "unique-string": "^3.0.0"
+  },
+  "devDependencies": {
+    "jest": "^29.1.2"
   }
 }
