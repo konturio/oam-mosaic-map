@@ -1,5 +1,6 @@
 import { jest } from "@jest/globals";
 import fs from "fs";
+import EventEmitter from "events";
 
 jest.setTimeout(30000);
 
@@ -38,6 +39,19 @@ jest.unstable_mockModule("../db.mjs", () => ({
             };
           }
         }
+        case "get-images-added-since-last-invalidation": {
+          expect(values.length).toBe(1);
+          expect(values[0]).toBeInstanceOf(Date);
+          return {
+            rows: [
+              {
+                uuid: "http://oin-hotosm.s3.amazonaws.com/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.tif",
+                geojson:
+                  '{"type":"Polygon","coordinates":[[[36.835672447,56.043330146],[36.835672447,56.048091024],[36.847995133,56.048091024],[36.847995133,56.043330146],[36.835672447,56.043330146]]]}',
+              },
+            ],
+          };
+        }
         default: {
           throw new Error(
             `unexpected db query with name ${name} and values ${JSON.stringify(
@@ -59,30 +73,50 @@ jest.unstable_mockModule("../db.mjs", () => ({
   }),
 }));
 
-function createMemCache() {
-  const cache = new Map();
+class CacheMem extends EventEmitter {
+  constructor() {
+    super();
+    this.cache = new Map();
+  }
 
-  return {
-    async cacheGet(key) {
-      if (cache.has(key)) {
-        return cache.get(key);
-      }
+  async get(key) {
+    this.emit("get", key);
+    if (this.cache.has(key)) {
+      return this.cache.get(key);
+    }
 
-      return null;
-    },
-    async cachePut(buffer, key) {
-      cache.set(key, buffer);
-    },
-  };
+    return null;
+  }
+
+  async put(buffer, key) {
+    this.emit("put", key);
+    this.cache.set(key, buffer);
+  }
+
+  async delete(key) {
+    this.emit("delete", key);
+    this.cache.delete(key);
+  }
 }
 
-jest.unstable_mockModule("../cache.mjs", createMemCache);
+const cache = new CacheMem();
+
+jest.unstable_mockModule("../cache.mjs", () => {
+  return {
+    cacheGet: cache.get.bind(cache),
+    cachePut: cache.put.bind(cache),
+    cacheDelete: cache.delete.bind(cache),
+  };
+});
 
 process.env.TITILER_BASE_URL = "https://test-apps02.konturlabs.com/titiler/";
 
-const { requestMosaic, tileRequestQueue, metadataRequestQueue } = await import(
-  "../mosaic.mjs"
-);
+const {
+  requestMosaic,
+  tileRequestQueue,
+  metadataRequestQueue,
+  invalidateMosaicCache,
+} = await import("../mosaic.mjs");
 
 test("mosaic(14, 9485, 5610)", async () => {
   const tile = await requestMosaic(14, 9485, 5610);
@@ -100,4 +134,30 @@ test("mosaic(11, 1233, 637)", async () => {
 
   const expected = fs.readFileSync("./__tests__/mosaic-11-1233-637.png");
   expect(Buffer.compare(expected, tile.buffer)).toBe(0);
+});
+
+test("mosaic cache invalidation", async () => {
+  const invalidatedCacheKeys = new Set();
+  const cacheDeleteEventListener = (key) => {
+    invalidatedCacheKeys.add(key);
+  };
+
+  const infoBefore = { last_updated: new Date().toISOString() };
+  await cache.put(Buffer.from(JSON.stringify(infoBefore)), "__info__.json");
+
+  cache.on("delete", cacheDeleteEventListener);
+  await invalidateMosaicCache();
+  cache.removeListener("delete", cacheDeleteEventListener);
+
+  const infoAfter = JSON.parse(await cache.get("__info__.json"));
+
+  expect(Date.parse(infoBefore.last_updated)).toBeLessThanOrEqual(
+    Date.parse(infoAfter.last_updated)
+  );
+
+  expect(invalidatedCacheKeys.has("__mosaic__/0/0/0.png")).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic__/0/0/0.jpg")).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic__/11/1233/637.png")).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic__/11/1233/637.jpg")).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic__/11/1233/638.png")).toBe(false);
 });

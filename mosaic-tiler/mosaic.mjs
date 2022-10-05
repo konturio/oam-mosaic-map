@@ -3,7 +3,7 @@ import sharp from "sharp";
 import PQueue from "p-queue";
 import cover from "@mapbox/tile-cover";
 import * as db from "./db.mjs";
-import { cacheGet, cachePut } from "./cache.mjs";
+import { cacheGet, cachePut, cacheDelete } from "./cache.mjs";
 
 const TITILER_BASE_URL = process.env.TITILER_BASE_URL;
 const TILE_SIZE = 512;
@@ -447,4 +447,61 @@ async function mosaic(z, x, y) {
   return new TileImage(tileBuffer, extension);
 }
 
-export { requestMosaic, tileRequestQueue, metadataRequestQueue };
+async function invalidateMosaicCache() {
+  const cacheInfo = JSON.parse(await cacheGet("__info__.json"));
+  const lastUpdated = new Date(cacheInfo.last_updated);
+  const newUpdateDate = new Date();
+
+  let dbClient;
+  let rows;
+  try {
+    dbClient = await db.getClient();
+    const dbResponse = await dbClient.query({
+      name: "get-images-added-since-last-invalidation",
+      text: `select
+        properties->>'uuid' uuid,
+        ST_AsGeoJSON(geom) geojson
+      from public.layers_features
+      where layer_id = (select id from public.layers where public_id = 'openaerialmap')
+        and (properties->>'uploaded_at')::timestamp > $1`,
+      values: [lastUpdated],
+    });
+    rows = dbResponse.rows;
+  } catch (err) {
+    throw err;
+  } finally {
+    if (dbClient) {
+      dbClient.release();
+    }
+  }
+
+  const deletePromises = [];
+  for (const row of rows) {
+    const url = row.uuid;
+    const geojson = JSON.parse(row.geojson);
+    const { maxzoom } = await getGeotiffMetadata(url);
+    for (let zoom = 0; zoom <= maxzoom; ++zoom) {
+      for (const [x, y, z] of getTileCover(geojson, zoom)) {
+        deletePromises.push(cacheDelete(`__mosaic__/${z}/${x}/${y}.png`));
+        deletePromises.push(cacheDelete(`__mosaic__/${z}/${x}/${y}.jpg`));
+      }
+    }
+  }
+  await Promise.all(deletePromises);
+
+  await cachePut(
+    Buffer.from(
+      JSON.stringify({
+        last_updated: newUpdateDate.toISOString(),
+      })
+    ),
+    "__info__.json"
+  );
+}
+
+export {
+  requestMosaic,
+  tileRequestQueue,
+  metadataRequestQueue,
+  invalidateMosaicCache,
+};
