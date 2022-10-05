@@ -11,6 +11,7 @@ import {
   requestMosaic,
   tileRequestQueue,
   metadataRequestQueue,
+  invalidateMosaicCache,
 } from "./mosaic.mjs";
 
 dotenv.config({ path: ".env" });
@@ -188,8 +189,8 @@ app.get(
   })
 );
 
-app.post("/purge_mosaic_cache", (req, res) => {
-  cachePurgeMosaic();
+app.post("/purge_mosaic_cache", async (req, res) => {
+  await cachePurgeMosaic();
   res.end("Ok");
 });
 
@@ -200,16 +201,27 @@ app.use(function (err, req, res, next) {
   next;
 });
 
-setInterval(() => {
-  console.log(">tile request queue size", tileRequestQueue.size);
-  console.log(">metadata request queue size", metadataRequestQueue.size);
-  console.log(">image processing", sharp.counters());
-  console.log(">db pool waiting count", db.getWaitingCount());
-}, 1000);
+function runQueuesStatusLogger() {
+  setInterval(() => {
+    console.log(">tile request queue size", tileRequestQueue.size);
+    console.log(">metadata request queue size", metadataRequestQueue.size);
+    console.log(">image processing", sharp.counters());
+    console.log(">db pool waiting count", db.getWaitingCount());
+  }, 1000);
+}
+
+function runMosaicCacheInvalidationJob() {
+  setInterval(() => {
+    invalidateMosaicCache();
+  }, 30000);
+}
 
 async function main() {
   try {
-    cacheInit();
+    await cacheInit();
+
+    runQueuesStatusLogger();
+    runMosaicCacheInvalidationJob();
 
     app.listen(PORT, () => {
       console.log(`mosaic-tiler server is listening on port ${PORT}`);

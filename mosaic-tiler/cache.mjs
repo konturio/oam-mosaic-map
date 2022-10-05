@@ -5,19 +5,35 @@ import { dirname } from "path";
 const TILES_CACHE_DIR_PATH = process.env.TILES_CACHE_DIR_PATH;
 const TMP_DIR_PATH = TILES_CACHE_DIR_PATH + "/tmp";
 
-function cacheInit() {
+async function cacheInit() {
   if (!fs.existsSync(TMP_DIR_PATH)) {
-    fs.mkdirSync(TMP_DIR_PATH, { recursive: true });
+    await fs.promises.mkdir(TMP_DIR_PATH, { recursive: true });
+  }
+
+  if ((await cacheGet("__info__.json")) === null) {
+    const now = new Date();
+    await cachePut(
+      Buffer.from(
+        JSON.stringify({
+          last_updated: new Date(
+            now.getFullYear(),
+            now.getMonth(),
+            now.getDate() - 31 // TODO: remove -31. required to corrently initialize __info__ on already running servers
+          ).toISOString(),
+        })
+      ),
+      "__info__.json"
+    );
   }
 }
 
 function cachePurgeMosaic() {
-  fs.rmSync(`${TILES_CACHE_DIR_PATH}/__mosaic__`);
+  return fs.promises.rmdir(`${TILES_CACHE_DIR_PATH}/__mosaic__`);
 }
 
-async function cacheGet(cacheKey) {
+async function cacheGet(key) {
   try {
-    return await fs.promises.readFile(`${TILES_CACHE_DIR_PATH}/${cacheKey}`);
+    return await fs.promises.readFile(`${TILES_CACHE_DIR_PATH}/${key}`);
   } catch (err) {
     if (err.code === "ENOENT") {
       return null;
@@ -25,6 +41,15 @@ async function cacheGet(cacheKey) {
 
     throw err;
   }
+}
+
+function cacheDelete(key) {
+  const path = `${TILES_CACHE_DIR_PATH}/${key}`;
+  if (fs.existsSync(path)) {
+    return fs.promises.unlink(path);
+  }
+
+  return Promise.resolve();
 }
 
 async function cachePut(buffer, key) {
@@ -44,4 +69,4 @@ async function cachePut(buffer, key) {
   await fs.promises.rename(temp, path);
 }
 
-export { cacheInit, cachePurgeMosaic, cacheGet, cachePut };
+export { cacheInit, cachePurgeMosaic, cacheGet, cachePut, cacheDelete };
