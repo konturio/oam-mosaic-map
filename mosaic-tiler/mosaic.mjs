@@ -450,7 +450,6 @@ async function mosaic(z, x, y) {
 async function invalidateMosaicCache() {
   const cacheInfo = JSON.parse(await cacheGet("__info__.json"));
   const lastUpdated = new Date(cacheInfo.last_updated);
-  const newUpdateDate = new Date();
 
   let dbClient;
   let rows;
@@ -460,6 +459,7 @@ async function invalidateMosaicCache() {
       name: "get-images-added-since-last-invalidation",
       text: `select
         properties->>'uuid' uuid,
+        properties->>'uploaded_at' uploaded_at,
         ST_AsGeoJSON(geom) geojson
       from public.layers_features
       where layer_id = (select id from public.layers where public_id = 'openaerialmap')
@@ -475,10 +475,18 @@ async function invalidateMosaicCache() {
     }
   }
 
+  if (rows.length === 0) {
+    return;
+  }
+
   const deletePromises = [];
+  let latestUploadedAt = rows[0].uploaded_at;
   for (const row of rows) {
     const url = row.uuid;
     const geojson = JSON.parse(row.geojson);
+    if (Date.parse(row.uploaded_at) > Date.parse(latestUploadedAt)) {
+      latestUploadedAt = row.uploaded_at;
+    }
     const { maxzoom } = await getGeotiffMetadata(url);
     for (let zoom = 0; zoom <= maxzoom; ++zoom) {
       for (const [x, y, z] of getTileCover(geojson, zoom)) {
@@ -492,7 +500,7 @@ async function invalidateMosaicCache() {
   await cachePut(
     Buffer.from(
       JSON.stringify({
-        last_updated: newUpdateDate.toISOString(),
+        last_updated: latestUploadedAt,
       })
     ),
     "__info__.json"
