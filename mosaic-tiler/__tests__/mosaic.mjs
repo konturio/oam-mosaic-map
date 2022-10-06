@@ -46,6 +46,7 @@ jest.unstable_mockModule("../db.mjs", () => ({
             rows: [
               {
                 uuid: "http://oin-hotosm.s3.amazonaws.com/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.tif",
+                uploaded_at: "2022-10-06T03:40:19.040Z",
                 geojson:
                   '{"type":"Polygon","coordinates":[[[36.835672447,56.043330146],[36.835672447,56.048091024],[36.847995133,56.048091024],[36.847995133,56.043330146],[36.835672447,56.043330146]]]}',
               },
@@ -142,7 +143,7 @@ test("mosaic cache invalidation", async () => {
     invalidatedCacheKeys.add(key);
   };
 
-  const infoBefore = { last_updated: new Date().toISOString() };
+  const infoBefore = { last_updated: "2022-10-05T03:40:19.040Z" };
   await cache.put(Buffer.from(JSON.stringify(infoBefore)), "__info__.json");
 
   cache.on("delete", cacheDeleteEventListener);
@@ -151,6 +152,10 @@ test("mosaic cache invalidation", async () => {
 
   const infoAfter = JSON.parse(await cache.get("__info__.json"));
 
+  expect(new Date(Date.parse(infoAfter.last_updated)).toISOString()).toBe(
+    infoAfter.last_updated
+  );
+  expect(infoAfter.last_updated).toBe("2022-10-06T03:40:19.040Z");
   expect(Date.parse(infoBefore.last_updated)).toBeLessThanOrEqual(
     Date.parse(infoAfter.last_updated)
   );
