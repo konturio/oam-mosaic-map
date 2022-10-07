@@ -5,6 +5,7 @@ import * as db from "./db.mjs";
 import express from "express";
 import morgan from "morgan";
 import cors from "cors";
+import ejs from "ejs";
 import zlib from "zlib";
 import { cacheInit, cachePurgeMosaic } from "./cache.mjs";
 import {
@@ -62,6 +63,19 @@ app.get(
     });
   })
 );
+
+app.get("/mosaic_viewer", function (req, res, next) {
+  ejs.renderFile(
+    "./mosaic_viewer.ejs",
+    { baseUrl: process.env.BASE_URL },
+    (err, data) => {
+      if (err) {
+        next(err);
+      }
+      res.send(data);
+    }
+  );
+});
 
 app.get(
   "/tiles/:z(\\d+)/:x(\\d+)/:y(\\d+).png",
