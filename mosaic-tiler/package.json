@@ -5,7 +5,7 @@
   "main": "main.mjs",
   "scripts": {
     "start": "node main.mjs",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage"
   },
   "author": "",
   "license": "ISC",
@@ -13,6 +13,7 @@
     "@mapbox/tile-cover": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.0.2",
+    "ejs": "^3.1.8",
     "express": "^4.18.1",
     "got": "^12.4.1",
     "morgan": "^1.10.0",

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Mosaic Viewer</title>
+    <meta
+      name="viewport"
+      content="initial-scale=1,maximum-scale=1,user-scalable=no"
+    />
+    <script src="https://api.tiles.mapbox.com/mapbox-gl-js/v1.13.0/mapbox-gl.js"></script>
+    <link
+      href="https://api.tiles.mapbox.com/mapbox-gl-js/v1.13.0/mapbox-gl.css"
+      rel="stylesheet"
+    />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="upgrade-insecure-requests"
+    />
+    <style>
+      body {
+        font-family: Inconsolata, Consolas, "Liberation Mono", Menlo, Courier,
+          monospace;
+        line-height: 1.5em;
+        font-size: 13.5px;
+        margin: 0;
+        padding: 0;
+      }
+      p {
+        padding: 10px;
+      }
+      #map {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        right: 0;
+        left: 0;
+      }
+      #menu {
+        position: absolute;
+        background: #efefef;
+        padding: 10px;
+        font-family: "Open Sans", sans-serif;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="map"></div>
+    <script>
+      mapboxgl.accessToken =
+        "pk.eyJ1IjoiYWthbGVuaWsiLCJhIjoiY2twNGJyYjlhMGFwaDJvczFjdDYxczUxcyJ9.v_yFz80m2ysMKD_aHmdobg";
+      const map = new mapboxgl.Map({
+        container: "map",
+        style: "mapbox://styles/mapbox/light-v10",
+        zoom: 0,
+        center: [0, 0],
+      });
+
+      window.map = map;
+
+      // map.showTileBoundaries = true;
+      // map.showCollisionBoxes = false;
+      // map.showPadding = true;
+
+      map.on("load", () => {
+        map.addSource("mosaic", {
+          type: "raster",
+          url: "<%= baseUrl + '/tiles/tilejson.json' %>",
+          tileSize: 512,
+        });
+        map.addSource("mosaic-clusters", {
+          type: "vector",
+          tiles: ["<%= baseUrl + '/clusters/{z}/{x}/{y}.mvt' %>"],
+          minzoom: 0,
+          maxzoom: 30,
+        });
+        map.addLayer({
+          id: "raster",
+          type: "raster",
+          source: "mosaic",
+        });
+        map.addLayer({
+          id: "mosaic-clusters",
+          type: "circle",
+          source: "mosaic-clusters",
+          "source-layer": "default",
+          paint: { "circle-radius": 14, "circle-color": "black" },
+        });
+        map.addLayer({
+          id: "mosaic-cluster-labels",
+          type: "symbol",
+          source: "mosaic-clusters",
+          "source-layer": "default",
+          filter: ["has", "count"],
+          layout: {
+            "text-field": ["get", "count"],
+            "text-font": ["DIN Offc Pro Bold", "Arial Unicode MS Bold"],
+            "text-size": 14,
+          },
+          paint: { "text-color": "white" },
+        });
+      });
+    </script>
+  </body>
+</html>
