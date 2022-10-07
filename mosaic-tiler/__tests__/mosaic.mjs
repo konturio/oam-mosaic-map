@@ -85,11 +85,15 @@ beforeEach(() => {
   dbQueryHandlers.clear();
 });
 
-test("mosaic(14, 9485, 5610)", async () => {
+test("mosaic(14, 9485, 5610) and 2 parent tiles", async () => {
   registerDbQueryHandler("get-image-uuid-in-zxy-tile", (values) => {
     expect(values.length).toBe(3);
     const [z, x, y] = values;
-    if (z === 14 && x === 9485 && y === 5610) {
+    if (
+      (z === 14 && x === 9485 && y === 5610) ||
+      (z === 13 && x === 4742 && y === 2805) ||
+      (z === 12 && x === 2371 && y === 1402)
+    ) {
       return {
         rows: [
           {
@@ -111,12 +115,30 @@ test("mosaic(14, 9485, 5610)", async () => {
     );
   });
 
-  const tile = await requestMosaic(14, 9485, 5610);
-  expect(tileRequestQueue.size).toBe(0);
-  expect(metadataRequestQueue.size).toBe(0);
+  const [tile, parentTile, parentParentTile] = await Promise.all([
+    requestMosaic(14, 9485, 5610),
+    requestMosaic(13, 4742, 2805),
+    requestMosaic(12, 2371, 1402),
+  ]);
 
-  const expected = fs.readFileSync("./__tests__/mosaic-14-9485-5610.png");
-  expect(Buffer.compare(expected, tile.buffer)).toBe(0);
+  expect(
+    Buffer.compare(
+      fs.readFileSync("./__tests__/mosaic-14-9485-5610.png"),
+      tile.buffer
+    )
+  ).toBe(0);
+  expect(
+    Buffer.compare(
+      fs.readFileSync("./__tests__/mosaic-13-4742-2805.png"),
+      parentTile.buffer
+    )
+  ).toBe(0);
+  expect(
+    Buffer.compare(
+      fs.readFileSync("./__tests__/mosaic-12-2371-1402.png"),
+      parentParentTile.buffer
+    )
+  ).toBe(0);
 });
 
 test("mosaic(11, 1233, 637)", async () => {
