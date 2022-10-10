@@ -507,8 +507,42 @@ async function invalidateMosaicCache() {
   );
 }
 
+async function oneBandCache(z, x, y, imgUrl, band) {
+  const extension = "png";
+
+  //colormap can be saved on layers-db
+  let colorMap = {};
+  colorMap[1] = "[[[0,20],[247,251,255,0]],[[21,40],[228,239,249,128]],[[41,60],[209,227,243,255]],[[61,80],[186,214,235,255]],[[81,100],[154,200,225,255]],[[101,120],[115,179,216,255]],[[121,140],[82,157,204,255]],[[141,160],[53,133,192,255]],[[161,180],[28,108,177,255]],[[181,200],[8,81,156,255]],[[201,9999],[8,48,107,255]]]";
+  colorMap[2] = "[[[0,20],[247,251,255,0]],[[21,40],[228,239,249,128]],[[41,60],[209,227,243,255]],[[61,80],[186,214,235,255]],[[81,100],[154,200,225,255]],[[101,120],[115,179,216,255]],[[121,140],[82,157,204,255]],[[141,160],[53,133,192,255]],[[161,180],[28,108,177,255]],[[181,200],[8,81,156,255]],[[201,9999],[8,48,107,255]]]";
+
+  //source();
+  let tileUrl = new URL(
+    `${TITILER_BASE_URL}/cog/tiles/WebMercatorQuad/${z}/${x}/${y}@1x`
+  );
+
+  tileUrl.searchParams.append("url", imgUrl);
+  tileUrl.searchParams.append("bidx", band);
+  tileUrl.searchParams.append("colormap", colorMap[band])
+
+  const key = imgUrl.substr(imgUrl.lastIndexOf("/") + 1).split(".")[0] + "/band" + band;
+  let tileBuffer = await cacheGetTile(key, z, x, y, extension);
+  if (tileBuffer) {
+    return new TileImage(tileBuffer, extension);
+  }
+
+  tileBuffer = await enqueueTileFetching(tileUrl.href, z, x, y);
+
+  if (tileBuffer) {
+    await cachePutTile(tileBuffer, key, z, x, y, extension);
+    return new TileImage(tileBuffer, extension);
+  } else {
+    return new TileImage(null, extension);;
+  }
+}
+
 export {
   requestMosaic,
+  oneBandCache,
   tileRequestQueue,
   metadataRequestQueue,
   invalidateMosaicCache,

@@ -12,6 +12,7 @@ import {
   tileRequestQueue,
   metadataRequestQueue,
   invalidateMosaicCache,
+  oneBandCache,
 } from "./mosaic.mjs";
 
 dotenv.config({ path: ".env" });
@@ -74,6 +75,30 @@ app.get(
     }
 
     const tile = await requestMosaic(z, x, y);
+    res.type(tile.extension);
+    res.end(tile.buffer);
+  })
+);
+
+app.get(
+  "/oneBandCache/:z(\\d+)/:x(\\d+)/:y(\\d+).png",
+  wrapAsyncCallback(async (req, res) => {
+    const imgUrl = req.query.imgUrl;
+    if (!imgUrl) {
+      return res.status(404).send("No image provided");
+    }
+    const band = req.query.band;
+    if (band != 1 && band != 2) {
+      return res.status(404).send("Only band1 and band2 exist");
+    }
+    const z = Number(req.params.z);
+    const x = Number(req.params.x);
+    const y = Number(req.params.y);
+    if (isValidZxy(z, x, y)) {
+      return res.status(404).send("Out of bounds");
+    }
+
+    const tile = await oneBandCache(z, x, y, imgUrl, band);
     res.type(tile.extension);
     res.end(tile.buffer);
   })
