@@ -9,7 +9,8 @@ import ejs from "ejs";
 import zlib from "zlib";
 import { cacheInit, cachePurgeMosaic } from "./cache.mjs";
 import {
-  requestMosaic,
+  requestMosaic512px,
+  requestMosaic256px,
   tileRequestQueue,
   metadataRequestQueue,
   invalidateMosaicCache,
@@ -87,17 +88,9 @@ app.get(
       return res.status(404).send("Out of bounds");
     }
 
-    const parent = {
-      z: z - 1,
-      x: x >> 1,
-      y: y >> 1,
-    };
-
-    const parent512 = await requestMosaic(parent.z, parent.x, parent.y);
-    const child256 = await parent512.extractChild(z, x, y);
-
-    res.type(child256.image.extension);
-    res.end(child256.image.buffer);
+    const tile = await requestMosaic256px(z, x, y);
+    res.type(tile.image.extension);
+    res.end(tile.image.buffer);
   })
 );
 

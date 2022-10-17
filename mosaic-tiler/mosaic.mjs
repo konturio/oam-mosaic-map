@@ -294,7 +294,7 @@ async function source(key, z, x, y, meta, geojson) {
 
 const activeMosaicRequests = new Map();
 // wrapper that deduplicates mosiac function calls
-function requestMosaic(z, x, y) {
+function requestMosaic512px(z, x, y) {
   const key = JSON.stringify([z, x, y]);
   if (activeMosaicRequests.has(key)) {
     return activeMosaicRequests.get(key);
@@ -306,6 +306,38 @@ function requestMosaic(z, x, y) {
   activeMosaicRequests.set(key, request);
 
   return request;
+}
+
+async function requestMosaic256px(z, x, y) {
+  let tileBuffer = await cacheGetTile("__mosaic256px__", z, x, y, "png");
+  if (tileBuffer) {
+    return new Tile(new TileImage(tileBuffer, "png", 256), z, x, y);
+  }
+
+  tileBuffer = await cacheGetTile("__mosaic256px__", z, x, y, "jpg");
+  if (tileBuffer) {
+    return new Tile(new TileImage(tileBuffer, "jpg", 256), z, x, y);
+  }
+
+  const parent = {
+    z: z - 1,
+    x: x >> 1,
+    y: y >> 1,
+  };
+
+  const parent512 = await requestMosaic512px(parent.z, parent.x, parent.y);
+  const child256 = await parent512.extractChild(z, x, y);
+
+  await cachePutTile(
+    child256.image.buffer,
+    "__mosaic256px__",
+    z,
+    x,
+    y,
+    child256.image.extension
+  );
+
+  return child256;
 }
 
 // request tile for mosaic
@@ -380,10 +412,10 @@ async function mosaic(z, x, y) {
     tilePromises.push(
       fromChildren(
         await Promise.all([
-          requestMosaic(z + 1, x * 2, y * 2),
-          requestMosaic(z + 1, x * 2 + 1, y * 2),
-          requestMosaic(z + 1, x * 2, y * 2 + 1),
-          requestMosaic(z + 1, x * 2 + 1, y * 2 + 1),
+          requestMosaic512px(z + 1, x * 2, y * 2),
+          requestMosaic512px(z + 1, x * 2 + 1, y * 2),
+          requestMosaic512px(z + 1, x * 2, y * 2 + 1),
+          requestMosaic512px(z + 1, x * 2 + 1, y * 2 + 1),
         ]),
         z,
         x,
@@ -496,7 +528,8 @@ async function invalidateMosaicCache() {
 }
 
 export {
-  requestMosaic,
+  requestMosaic512px,
+  requestMosaic256px,
   tileRequestQueue,
   metadataRequestQueue,
   invalidateMosaicCache,
