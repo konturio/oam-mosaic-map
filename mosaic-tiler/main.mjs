@@ -88,7 +88,47 @@ app.get(
       return res.status(404).send("Out of bounds");
     }
 
+    if (z == 0) {
+      return res.status(404).end();
+    }
+
     const tile = await requestMosaic256px(z, x, y);
+    res.type(tile.image.extension);
+    res.end(tile.image.buffer);
+  })
+);
+
+app.get(
+  "/tiles/:z(\\d+)/:x(\\d+)/:y(\\d+)@1.png",
+  wrapAsyncCallback(async (req, res) => {
+    const z = Number(req.params.z);
+    const x = Number(req.params.x);
+    const y = Number(req.params.y);
+    if (isValidZxy(z, x, y)) {
+      return res.status(404).send("Out of bounds");
+    }
+
+    if (z == 0) {
+      return res.status(404).end();
+    }
+
+    const tile = await requestMosaic256px(z, x, y);
+    res.type(tile.image.extension);
+    res.end(tile.image.buffer);
+  })
+);
+
+app.get(
+  "/tiles/:z(\\d+)/:x(\\d+)/:y(\\d+)@2.png",
+  wrapAsyncCallback(async (req, res) => {
+    const z = Number(req.params.z);
+    const x = Number(req.params.x);
+    const y = Number(req.params.y);
+    if (isValidZxy(z, x, y)) {
+      return res.status(404).send("Out of bounds");
+    }
+
+    const tile = await requestMosaic512px(z, x, y);
     res.type(tile.image.extension);
     res.end(tile.image.buffer);
   })
