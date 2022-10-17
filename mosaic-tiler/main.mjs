@@ -87,9 +87,17 @@ app.get(
       return res.status(404).send("Out of bounds");
     }
 
-    const tile = await requestMosaic(z, x, y);
-    res.type(tile.extension);
-    res.end(tile.buffer);
+    const parent = {
+      z: z - 1,
+      x: x >> 1,
+      y: y >> 1,
+    };
+
+    const parent512 = await requestMosaic(parent.z, parent.x, parent.y);
+    const child256 = await parent512.extractChild(z, x, y);
+
+    res.type(child256.image.extension);
+    res.end(child256.image.buffer);
   })
 );
 

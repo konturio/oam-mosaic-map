@@ -123,20 +123,20 @@ test("mosaic(14, 9485, 5610) and 2 parent tiles", async () => {
 
   expect(
     Buffer.compare(
-      fs.readFileSync("./__tests__/mosaic-14-9485-5610.png"),
-      tile.buffer
+      fs.readFileSync("./__tests__/mosaic@2x-14-9485-5610.png"),
+      tile.image.buffer
     )
   ).toBe(0);
   expect(
     Buffer.compare(
-      fs.readFileSync("./__tests__/mosaic-13-4742-2805.png"),
-      parentTile.buffer
+      fs.readFileSync("./__tests__/mosaic@2x-13-4742-2805.png"),
+      parentTile.image.buffer
     )
   ).toBe(0);
   expect(
     Buffer.compare(
-      fs.readFileSync("./__tests__/mosaic-12-2371-1402.png"),
-      parentParentTile.buffer
+      fs.readFileSync("./__tests__/mosaic@2x-12-2371-1402.png"),
+      parentParentTile.image.buffer
     )
   ).toBe(0);
 });
@@ -166,8 +166,8 @@ test("mosaic(11, 1233, 637)", async () => {
   expect(tileRequestQueue.size).toBe(0);
   expect(metadataRequestQueue.size).toBe(0);
 
-  const expected = fs.readFileSync("./__tests__/mosaic-11-1233-637.png");
-  expect(Buffer.compare(expected, tile.buffer)).toBe(0);
+  const expected = fs.readFileSync("./__tests__/mosaic@2x-11-1233-637.png");
+  expect(Buffer.compare(expected, tile.image.buffer)).toBe(0);
 });
 
 test("mosaic cache invalidation", async () => {
