@@ -99,7 +99,7 @@ app.get(
 );
 
 app.get(
-  "/tiles/:z(\\d+)/:x(\\d+)/:y(\\d+)@1.png",
+  "/tiles/:z(\\d+)/:x(\\d+)/:y(\\d+)@1x.png",
   wrapAsyncCallback(async (req, res) => {
     const z = Number(req.params.z);
     const x = Number(req.params.x);
@@ -119,7 +119,7 @@ app.get(
 );
 
 app.get(
-  "/tiles/:z(\\d+)/:x(\\d+)/:y(\\d+)@2.png",
+  "/tiles/:z(\\d+)/:x(\\d+)/:y(\\d+)@2x.png",
   wrapAsyncCallback(async (req, res) => {
     const z = Number(req.params.z);
     const x = Number(req.params.x);
