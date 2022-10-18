@@ -80,52 +80,17 @@ class Tile {
       throw new Error("256 px tile can only be extracted from 512 px tile");
     }
 
+    if (this.z + 1 !== z) {
+      throw new Error("can only get offset for next zoom");
+    }
+
     if (this.image.empty()) {
       return this.image;
     }
 
-    const offset = this.getChildOffset(z, x, y);
-    const image = await this.image.extractChild(offset.x, offset.y);
+    const image = await this.image.extractChild(x % 2, y % 2);
 
     return new Tile(image, z, x, y);
-  }
-
-  getChildOffset(z, x, y) {
-    if (this.z + 1 !== z) {
-      throw new Error("can only get offset for next zoom");
-    }
-    const parent = {
-      z: this.z,
-      x: this.x,
-      y: this.y,
-    };
-
-    const children = [
-      {
-        offset: { x: 0, y: 0 },
-        tile: { z: parent.z + 1, x: parent.x * 2, y: parent.y * 2 },
-      },
-      {
-        offset: { x: 1, y: 0 },
-        tile: { z: parent.z + 1, x: parent.x * 2 + 1, y: parent.y * 2 },
-      },
-      {
-        offset: { x: 1, y: 1 },
-        tile: { z: parent.z + 1, x: parent.x * 2 + 1, y: parent.y * 2 + 1 },
-      },
-      {
-        offset: { x: 0, y: 1 },
-        tile: { z: parent.z + 1, x: parent.x * 2, y: parent.y * 2 + 1 },
-      },
-    ];
-
-    for (const child of children) {
-      if (child.tile.z === z && child.tile.x === x && child.tile.y === y) {
-        return child.offset;
-      }
-    }
-
-    throw new Error("getOffsetRelativeToParent: should never get here");
   }
 }
 
