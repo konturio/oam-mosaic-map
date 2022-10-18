@@ -74,7 +74,8 @@ jest.unstable_mockModule("../cache.mjs", () => {
 process.env.TITILER_BASE_URL = "https://test-apps02.konturlabs.com/titiler/";
 
 const {
-  requestMosaic,
+  requestMosaic256px,
+  requestMosaic512px,
   tileRequestQueue,
   metadataRequestQueue,
   invalidateMosaicCache,
@@ -116,27 +117,67 @@ test("mosaic(14, 9485, 5610) and 2 parent tiles", async () => {
   });
 
   const [tile, parentTile, parentParentTile] = await Promise.all([
-    requestMosaic(14, 9485, 5610),
-    requestMosaic(13, 4742, 2805),
-    requestMosaic(12, 2371, 1402),
+    requestMosaic512px(14, 9485, 5610),
+    requestMosaic512px(13, 4742, 2805),
+    requestMosaic512px(12, 2371, 1402),
   ]);
 
   expect(
     Buffer.compare(
-      fs.readFileSync("./__tests__/mosaic-14-9485-5610.png"),
-      tile.buffer
+      fs.readFileSync("./__tests__/mosaic@2x-14-9485-5610.png"),
+      tile.image.buffer
     )
   ).toBe(0);
   expect(
     Buffer.compare(
-      fs.readFileSync("./__tests__/mosaic-13-4742-2805.png"),
-      parentTile.buffer
+      fs.readFileSync("./__tests__/mosaic@2x-13-4742-2805.png"),
+      parentTile.image.buffer
     )
   ).toBe(0);
   expect(
     Buffer.compare(
-      fs.readFileSync("./__tests__/mosaic-12-2371-1402.png"),
-      parentParentTile.buffer
+      fs.readFileSync("./__tests__/mosaic@2x-12-2371-1402.png"),
+      parentParentTile.image.buffer
+    )
+  ).toBe(0);
+});
+
+test("mosaic256px(14, 9485, 5610)", async () => {
+  registerDbQueryHandler("get-image-uuid-in-zxy-tile", (values) => {
+    expect(values.length).toBe(3);
+    const [z, x, y] = values;
+    if (
+      (z === 14 && x === 9485 && y === 5610) ||
+      (z === 13 && x === 4742 && y === 2805) ||
+      (z === 12 && x === 2371 && y === 1402)
+    ) {
+      return {
+        rows: [
+          {
+            uuid: "https://oin-hotosm.s3.amazonaws.com/60ec2f0a38de2500058775ec/0/60ec2f0a38de2500058775ed.tif",
+            geojson:
+              '{"type":"Polygon","coordinates":[[[28.3927,49.233978],[28.3927,49.241721],[28.418338,49.241721],[28.418338,49.233978],[28.3927,49.233978]]]}',
+          },
+          {
+            uuid: "https://oin-hotosm.s3.amazonaws.com/60f93a91bdbb2f00062bcbe9/0/60f93a91bdbb2f00062bcbea.tif",
+            geojson:
+              '{"type":"Polygon","coordinates":[[[28.424527,49.231163],[28.424527,49.236791],[28.429493,49.236791],[28.429493,49.231163],[28.424527,49.231163]]]}',
+          },
+        ],
+      };
+    }
+
+    throw new Error(
+      `query received unexpected values: ${JSON.stringify(values)}`
+    );
+  });
+
+  const tile = await requestMosaic256px(15, 18970, 11220);
+
+  expect(
+    Buffer.compare(
+      fs.readFileSync("./__tests__/mosaic@1x-15-18970-11220.png"),
+      tile.image.buffer
     )
   ).toBe(0);
 });
@@ -162,12 +203,12 @@ test("mosaic(11, 1233, 637)", async () => {
     );
   });
 
-  const tile = await requestMosaic(11, 1233, 637);
+  const tile = await requestMosaic512px(11, 1233, 637);
   expect(tileRequestQueue.size).toBe(0);
   expect(metadataRequestQueue.size).toBe(0);
 
-  const expected = fs.readFileSync("./__tests__/mosaic-11-1233-637.png");
-  expect(Buffer.compare(expected, tile.buffer)).toBe(0);
+  const expected = fs.readFileSync("./__tests__/mosaic@2x-11-1233-637.png");
+  expect(Buffer.compare(expected, tile.image.buffer)).toBe(0);
 });
 
 test("mosaic cache invalidation", async () => {

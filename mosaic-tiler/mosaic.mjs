@@ -4,6 +4,7 @@ import PQueue from "p-queue";
 import cover from "@mapbox/tile-cover";
 import * as db from "./db.mjs";
 import { cacheGet, cachePut, cacheDelete } from "./cache.mjs";
+import { Tile, TileImage } from "./tile.mjs";
 
 const TITILER_BASE_URL = process.env.TITILER_BASE_URL;
 const TILE_SIZE = 512;
@@ -24,17 +25,6 @@ function cachePutTile(tile, key, z, x, y, extension) {
     throw new Error(".png and .jpg are the only allowed extensions");
   }
   return cachePut(tile, `${key}/${z}/${x}/${y}.${extension}`);
-}
-
-class TileImage {
-  constructor(buffer, extension) {
-    this.buffer = buffer;
-    this.extension = extension;
-  }
-
-  empty() {
-    return this.buffer === null || this.buffer.length === 0;
-  }
 }
 
 function keyFromS3Url(url) {
@@ -175,34 +165,28 @@ function enqueueMetadataFetching(uuid) {
   return request;
 }
 
-function downscaleTile(buffer) {
-  return sharp(buffer)
-    .resize({ width: TILE_SIZE / 2, height: TILE_SIZE / 2 })
-    .toBuffer();
-}
-
 // TODO: ignore transparent tiles from input
 // produces tile from 4 underlying children tiles
-async function fromChildren(tiles) {
+async function fromChildren(tiles, z, x, y) {
   const [upperLeft, upperRight, lowerLeft, lowerRight] = tiles;
 
   const composite = [];
   if (!upperLeft.empty()) {
-    const downscaled = await downscaleTile(upperLeft.buffer);
-    composite.push({ input: downscaled, top: 0, left: 0 });
+    const downscaled = await upperLeft.image.scale(0.5);
+    composite.push({ input: downscaled.buffer, top: 0, left: 0 });
   }
   if (!upperRight.empty()) {
-    const downscaled = await downscaleTile(upperRight.buffer);
-    composite.push({ input: downscaled, top: 0, left: TILE_SIZE / 2 });
+    const downscaled = await upperRight.image.scale(0.5);
+    composite.push({ input: downscaled.buffer, top: 0, left: TILE_SIZE / 2 });
   }
   if (!lowerLeft.empty()) {
-    const downscaled = await downscaleTile(lowerLeft.buffer);
-    composite.push({ input: downscaled, top: TILE_SIZE / 2, left: 0 });
+    const downscaled = await lowerLeft.image.scale(0.5);
+    composite.push({ input: downscaled.buffer, top: TILE_SIZE / 2, left: 0 });
   }
   if (!lowerRight.empty()) {
-    const downscaled = await downscaleTile(lowerRight.buffer);
+    const downscaled = await lowerRight.image.scale(0.5);
     composite.push({
-      input: downscaled,
+      input: downscaled.buffer,
       top: TILE_SIZE / 2,
       left: TILE_SIZE / 2,
     });
@@ -220,7 +204,7 @@ async function fromChildren(tiles) {
     .png()
     .toBuffer();
 
-  return new TileImage(buffer, "png");
+  return new Tile(new TileImage(buffer, "png"), z, x, y);
 }
 
 const tileCoverCache = {
@@ -270,12 +254,12 @@ function getTileCover(geojson, zoom) {
 // geojson -- image outline
 async function source(key, z, x, y, meta, geojson) {
   if (z > meta.maxzoom) {
-    return new TileImage(null);
+    return Tile.createEmpty(z, x, y);
   }
 
   let tileBuffer = await cacheGetTile(key, z, x, y, "png");
   if (tileBuffer) {
-    return new TileImage(tileBuffer, "png");
+    return new Tile(new TileImage(tileBuffer, "png"), z, x, y);
   }
 
   const tileCover = getTileCover(geojson, z);
@@ -284,7 +268,7 @@ async function source(key, z, x, y, meta, geojson) {
   });
   if (!intersects) {
     await cachePutTile(null, key, z, x, y, "png");
-    return new TileImage(null);
+    return Tile.createEmpty(z, x, y);
   }
 
   if (z >= meta.minzoom && z <= meta.maxzoom) {
@@ -297,19 +281,20 @@ async function source(key, z, x, y, meta, geojson) {
       source(key, z + 1, x * 2 + 1, y * 2 + 1, meta, geojson),
     ]);
 
-    tileBuffer = (await fromChildren(tiles)).buffer;
+    const tile = await fromChildren(tiles, z, x, y);
+    tileBuffer = tile.image.buffer;
   } else {
-    return new TileImage(null);
+    return Tile.createEmpty(z, x, y);
   }
 
   await cachePutTile(tileBuffer, key, z, x, y, "png");
 
-  return new TileImage(tileBuffer, "png");
+  return new Tile(new TileImage(tileBuffer, "png"), z, x, y);
 }
 
 const activeMosaicRequests = new Map();
 // wrapper that deduplicates mosiac function calls
-function requestMosaic(z, x, y) {
+function requestMosaic512px(z, x, y) {
   const key = JSON.stringify([z, x, y]);
   if (activeMosaicRequests.has(key)) {
     return activeMosaicRequests.get(key);
@@ -323,6 +308,38 @@ function requestMosaic(z, x, y) {
   return request;
 }
 
+async function requestMosaic256px(z, x, y) {
+  let tileBuffer = await cacheGetTile("__mosaic256px__", z, x, y, "png");
+  if (tileBuffer) {
+    return new Tile(new TileImage(tileBuffer, "png", 256), z, x, y);
+  }
+
+  tileBuffer = await cacheGetTile("__mosaic256px__", z, x, y, "jpg");
+  if (tileBuffer) {
+    return new Tile(new TileImage(tileBuffer, "jpg", 256), z, x, y);
+  }
+
+  const parent = {
+    z: z - 1,
+    x: x >> 1,
+    y: y >> 1,
+  };
+
+  const parent512 = await requestMosaic512px(parent.z, parent.x, parent.y);
+  const child256 = await parent512.extractChild(z, x, y);
+
+  await cachePutTile(
+    child256.image.buffer,
+    "__mosaic256px__",
+    z,
+    x,
+    y,
+    child256.image.extension
+  );
+
+  return child256;
+}
+
 // request tile for mosaic
 async function mosaic(z, x, y) {
   let dbClient;
@@ -330,12 +347,12 @@ async function mosaic(z, x, y) {
 
   let tileBuffer = await cacheGetTile("__mosaic__", z, x, y, "png");
   if (tileBuffer) {
-    return new TileImage(tileBuffer, "png");
+    return new Tile(new TileImage(tileBuffer, "png"), z, x, y);
   }
 
   tileBuffer = await cacheGetTile("__mosaic__", z, x, y, "jpg");
   if (tileBuffer) {
-    return new TileImage(tileBuffer, "jpg");
+    return new Tile(new TileImage(tileBuffer, "jpg"), z, x, y);
   }
 
   try {
@@ -395,11 +412,14 @@ async function mosaic(z, x, y) {
     tilePromises.push(
       fromChildren(
         await Promise.all([
-          requestMosaic(z + 1, x * 2, y * 2),
-          requestMosaic(z + 1, x * 2 + 1, y * 2),
-          requestMosaic(z + 1, x * 2, y * 2 + 1),
-          requestMosaic(z + 1, x * 2 + 1, y * 2 + 1),
-        ])
+          requestMosaic512px(z + 1, x * 2, y * 2),
+          requestMosaic512px(z + 1, x * 2 + 1, y * 2),
+          requestMosaic512px(z + 1, x * 2, y * 2 + 1),
+          requestMosaic512px(z + 1, x * 2 + 1, y * 2 + 1),
+        ]),
+        z,
+        x,
+        y
       )
     );
   } else {
@@ -429,7 +449,7 @@ async function mosaic(z, x, y) {
       tiles
         .filter((tile) => !tile.empty())
         .map((tile) => {
-          return { input: tile.buffer, top: 0, left: 0 };
+          return { input: tile.image.buffer, top: 0, left: 0 };
         })
     )
     .png()
@@ -444,7 +464,7 @@ async function mosaic(z, x, y) {
 
   await cachePutTile(tileBuffer, "__mosaic__", z, x, y, extension);
 
-  return new TileImage(tileBuffer, extension);
+  return new Tile(new TileImage(tileBuffer, extension), z, x, y);
 }
 
 async function invalidateMosaicCache() {
@@ -508,7 +528,8 @@ async function invalidateMosaicCache() {
 }
 
 export {
-  requestMosaic,
+  requestMosaic512px,
+  requestMosaic256px,
   tileRequestQueue,
   metadataRequestQueue,
   invalidateMosaicCache,
