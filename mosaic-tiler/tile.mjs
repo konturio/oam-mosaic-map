@@ -75,6 +75,10 @@ class Tile {
     return this.image.empty();
   }
 
+  async scale(factor) {
+    return new Tile(await this.image.scale(factor), this.z, this.x, this.y);
+  }
+
   async extractChild(z, x, y) {
     if (!(this.image.tileSize === 512)) {
       throw new Error("256 px tile can only be extracted from 512 px tile");
