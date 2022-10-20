@@ -57,8 +57,10 @@ function isInvalidZxy(z, x, y) {
   );
 }
 
-app.get(
-  "/tiles/tilejson.json",
+const mosaicTilesRouter = express.Router();
+
+mosaicTilesRouter.get(
+  "/tilejson.json",
   wrapAsyncCallback(async (req, res) => {
     res.json({
       tilejson: "2.2.0",
@@ -72,21 +74,8 @@ app.get(
   })
 );
 
-app.get("/mosaic_viewer", function (req, res, next) {
-  ejs.renderFile(
-    "./mosaic_viewer.ejs",
-    { baseUrl: process.env.BASE_URL },
-    (err, data) => {
-      if (err) {
-        next(err);
-      }
-      res.send(data);
-    }
-  );
-});
-
-app.get(
-  "/tiles/:z(\\d+)/:x(\\d+)/:y(\\d+).png",
+mosaicTilesRouter.get(
+  "/:z(\\d+)/:x(\\d+)/:y(\\d+).png",
   wrapAsyncCallback(async (req, res) => {
     const z = Number(req.params.z);
     const x = Number(req.params.x);
@@ -105,8 +94,8 @@ app.get(
   })
 );
 
-app.get(
-  "/tiles/:z(\\d+)/:x(\\d+)/:y(\\d+)@1x.png",
+mosaicTilesRouter.get(
+  "/:z(\\d+)/:x(\\d+)/:y(\\d+)@1x.png",
   wrapAsyncCallback(async (req, res) => {
     const z = Number(req.params.z);
     const x = Number(req.params.x);
@@ -125,8 +114,8 @@ app.get(
   })
 );
 
-app.get(
-  "/tiles/:z(\\d+)/:x(\\d+)/:y(\\d+)@2x.png",
+mosaicTilesRouter.get(
+  "/:z(\\d+)/:x(\\d+)/:y(\\d+)@2x.png",
   wrapAsyncCallback(async (req, res) => {
     const z = Number(req.params.z);
     const x = Number(req.params.x);
@@ -140,6 +129,22 @@ app.get(
     res.end(tile.image.buffer);
   })
 );
+
+app.use("/tiles", mosaicTilesRouter);
+app.use("/oam/mosaic", mosaicTilesRouter);
+
+app.get("/mosaic_viewer", function (req, res, next) {
+  ejs.renderFile(
+    "./mosaic_viewer.ejs",
+    { baseUrl: process.env.BASE_URL },
+    (err, data) => {
+      if (err) {
+        next(err);
+      }
+      res.send(data);
+    }
+  );
+});
 
 // separate connection for mvt outlines debug endpoint to make it respond when
 // all other connection in pool are busy
