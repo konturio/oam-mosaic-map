@@ -319,25 +319,25 @@ async function requestMosaic256px(z, x, y) {
     return new Tile(new TileImage(tileBuffer, "jpg", 256), z, x, y);
   }
 
-  const parent = {
-    z: z - 1,
-    x: x >> 1,
-    y: y >> 1,
-  };
-
-  const parent512 = await requestMosaic512px(parent.z, parent.x, parent.y);
-  const child256 = await parent512.extractChild(z, x, y);
+  let tile256;
+  if (z % 2 === 0) {
+    const tile512 = await requestMosaic512px(z, x, y);
+    tile256 = await tile512.scale(0.5);
+  } else {
+    const parent512 = await requestMosaic512px(z - 1, x >> 1, y >> 1);
+    tile256 = await parent512.extractChild(z, x, y);
+  }
 
   await cachePutTile(
-    child256.image.buffer,
+    tile256.image.buffer,
     "__mosaic256px__",
     z,
     x,
     y,
-    child256.image.extension
+    tile256.image.extension
   );
 
-  return child256;
+  return tile256;
 }
 
 // request tile for mosaic
