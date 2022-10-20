@@ -46,8 +46,15 @@ function wrapAsyncCallback(callback) {
   };
 }
 
-function isValidZxy(z, x, y) {
-  return z < 0 || x < 0 || y < 0 || x >= Math.pow(2, z) || y >= Math.pow(2, z);
+function isInvalidZxy(z, x, y) {
+  return (
+    z < 0 ||
+    z >= 32 ||
+    x < 0 ||
+    y < 0 ||
+    x >= Math.pow(2, z) ||
+    y >= Math.pow(2, z)
+  );
 }
 
 app.get(
@@ -84,7 +91,7 @@ app.get(
     const z = Number(req.params.z);
     const x = Number(req.params.x);
     const y = Number(req.params.y);
-    if (isValidZxy(z, x, y)) {
+    if (isInvalidZxy(z, x, y)) {
       return res.status(404).send("Out of bounds");
     }
 
@@ -104,7 +111,7 @@ app.get(
     const z = Number(req.params.z);
     const x = Number(req.params.x);
     const y = Number(req.params.y);
-    if (isValidZxy(z, x, y)) {
+    if (isInvalidZxy(z, x, y)) {
       return res.status(404).send("Out of bounds");
     }
 
@@ -124,7 +131,7 @@ app.get(
     const z = Number(req.params.z);
     const x = Number(req.params.x);
     const y = Number(req.params.y);
-    if (isValidZxy(z, x, y)) {
+    if (isInvalidZxy(z, x, y)) {
       return res.status(404).send("Out of bounds");
     }
 
@@ -150,7 +157,7 @@ app.get(
     const z = Number(req.params.z);
     const x = Number(req.params.x);
     const y = Number(req.params.y);
-    if (isValidZxy(z, x, y)) {
+    if (isInvalidZxy(z, x, y)) {
       return res.status(404).send("Out of bounds");
     }
 
@@ -198,7 +205,7 @@ app.get(
     const z = Number(req.params.z);
     const x = Number(req.params.x);
     const y = Number(req.params.y);
-    if (isValidZxy(z, x, y)) {
+    if (isInvalidZxy(z, x, y)) {
       return res.status(404).send("Out of bounds");
     }
 
