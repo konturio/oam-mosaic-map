@@ -25,6 +25,8 @@ const gzip = promisify(zlib.gzip);
 
 const app = express();
 
+app.set('etag', 'weak');
+
 app.use(
   morgan(":method :url :status :res[content-length] - :response-time ms")
 );
@@ -62,6 +64,7 @@ const mosaicTilesRouter = express.Router();
 mosaicTilesRouter.get(
   "/tilejson.json",
   wrapAsyncCallback(async (req, res) => {
+    res.set('Cache-Control', 'public, no-cache');
     res.json({
       tilejson: "2.2.0",
       version: "1.0.0",
@@ -77,6 +80,8 @@ mosaicTilesRouter.get(
 mosaicTilesRouter.get(
   "/:z(\\d+)/:x(\\d+)/:y(\\d+).png",
   wrapAsyncCallback(async (req, res) => {
+    res.set('Cache-Control', 'public, max-age=300');
+
     const z = Number(req.params.z);
     const x = Number(req.params.x);
     const y = Number(req.params.y);
@@ -90,13 +95,15 @@ mosaicTilesRouter.get(
 
     const tile = await requestMosaic256px(z, x, y);
     res.type(tile.image.extension);
-    res.end(tile.image.buffer);
+    res.send(tile.image.buffer);
   })
 );
 
 mosaicTilesRouter.get(
   "/:z(\\d+)/:x(\\d+)/:y(\\d+)@1x.png",
   wrapAsyncCallback(async (req, res) => {
+    res.set('Cache-Control', 'public, max-age=300');
+
     const z = Number(req.params.z);
     const x = Number(req.params.x);
     const y = Number(req.params.y);
@@ -110,13 +117,15 @@ mosaicTilesRouter.get(
 
     const tile = await requestMosaic256px(z, x, y);
     res.type(tile.image.extension);
-    res.end(tile.image.buffer);
+    res.send(tile.image.buffer);
   })
 );
 
 mosaicTilesRouter.get(
   "/:z(\\d+)/:x(\\d+)/:y(\\d+)@2x.png",
   wrapAsyncCallback(async (req, res) => {
+    res.set('Cache-Control', 'public, max-age=300');
+
     const z = Number(req.params.z);
     const x = Number(req.params.x);
     const y = Number(req.params.y);
@@ -126,7 +135,7 @@ mosaicTilesRouter.get(
 
     const tile = await requestMosaic512px(z, x, y);
     res.type(tile.image.extension);
-    res.end(tile.image.buffer);
+    res.send(tile.image.buffer);
   })
 );
 
@@ -159,6 +168,8 @@ async function getMvtConnection() {
 app.get(
   "/outlines/:z(\\d+)/:x(\\d+)/:y(\\d+).mvt",
   wrapAsyncCallback(async (req, res) => {
+    res.set('Cache-Control', 'public, max-age=300');
+
     const z = Number(req.params.z);
     const x = Number(req.params.x);
     const y = Number(req.params.y);
@@ -191,8 +202,8 @@ app.get(
       return res.status(204).end();
     }
 
-    res.writeHead(200, { "Content-Encoding": "gzip" });
-    res.end(await gzip(rows[0].mvt));
+    res.set("Content-Encoding", "gzip");
+    res.send(await gzip(rows[0].mvt));
   })
 );
 
@@ -207,6 +218,8 @@ async function getClustersConnection() {
 app.get(
   "/clusters/:z(\\d+)/:x(\\d+)/:y(\\d+).mvt",
   wrapAsyncCallback(async (req, res) => {
+    res.set('Cache-Control', 'public, max-age=300');
+
     const z = Number(req.params.z);
     const x = Number(req.params.x);
     const y = Number(req.params.y);
@@ -244,8 +257,8 @@ app.get(
       return res.status(204).end();
     }
 
-    res.writeHead(200, { "Content-Encoding": "gzip" });
-    res.end(await gzip(rows[0].mvt));
+    res.set("Content-Encoding", "gzip");
+    res.send(await gzip(rows[0].mvt));
   })
 );
 
@@ -258,13 +271,13 @@ app.get(
 
 app.post("/purge_mosaic_cache", async (req, res) => {
   await cachePurgeMosaic();
-  res.end("Ok");
+  res.send("Ok");
 });
 
 app.use(function (err, req, res, next) {
   console.error(err.stack);
   res.status(500);
-  res.end("Internal server error");
+  res.send("Internal server error");
   next;
 });
 
