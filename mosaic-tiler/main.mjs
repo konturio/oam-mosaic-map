@@ -93,6 +93,10 @@ mosaicTilesRouter.get(
     }
 
     const tile = await requestMosaic256px(z, x, y);
+    if (tile.image.empty()) {
+      return res.status(204).send();
+    }
+
     res.type(tile.image.extension);
     res.send(tile.image.buffer);
   })
@@ -115,6 +119,10 @@ mosaicTilesRouter.get(
     }
 
     const tile = await requestMosaic256px(z, x, y);
+    if (tile.image.empty()) {
+      return res.status(204).send();
+    }
+
     res.type(tile.image.extension);
     res.send(tile.image.buffer);
   })
@@ -133,6 +141,10 @@ mosaicTilesRouter.get(
     }
 
     const tile = await requestMosaic512px(z, x, y);
+    if (tile.image.empty()) {
+      return res.status(204).send();
+    }
+
     res.type(tile.image.extension);
     res.send(tile.image.buffer);
   })
@@ -198,7 +210,7 @@ app.get(
       values: [z, x, y, z, x, y],
     });
     if (rows.length === 0) {
-      return res.status(204).end();
+      return res.status(204).send();
     }
 
     res.set("Content-Encoding", "gzip");
@@ -253,7 +265,7 @@ app.get(
       values: [z, z, x, y, z, z, x, y],
     });
     if (rows.length === 0) {
-      return res.status(204).end();
+      return res.status(204).send();
     }
 
     res.set("Content-Encoding", "gzip");
