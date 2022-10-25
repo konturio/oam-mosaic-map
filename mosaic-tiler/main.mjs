@@ -8,11 +8,10 @@ import cors from "cors";
 import ejs from "ejs";
 import zlib from "zlib";
 import { cacheInit, cachePurgeMosaic } from "./cache.mjs";
+import { tileRequestQueue, metadataRequestQueue } from "./titiler_fetcher.mjs";
 import {
   requestMosaic512px,
   requestMosaic256px,
-  tileRequestQueue,
-  metadataRequestQueue,
   invalidateMosaicCache,
 } from "./mosaic.mjs";
 
@@ -25,7 +24,7 @@ const gzip = promisify(zlib.gzip);
 
 const app = express();
 
-app.set('etag', 'weak');
+app.set("etag", "weak");
 
 app.use(
   morgan(":method :url :status :res[content-length] - :response-time ms")
@@ -64,7 +63,7 @@ const mosaicTilesRouter = express.Router();
 mosaicTilesRouter.get(
   "/tilejson.json",
   wrapAsyncCallback(async (req, res) => {
-    res.set('Cache-Control', 'public, no-cache');
+    res.set("Cache-Control", "public, no-cache");
     res.json({
       tilejson: "2.2.0",
       version: "1.0.0",
@@ -80,7 +79,7 @@ mosaicTilesRouter.get(
 mosaicTilesRouter.get(
   "/:z(\\d+)/:x(\\d+)/:y(\\d+).png",
   wrapAsyncCallback(async (req, res) => {
-    res.set('Cache-Control', 'public, max-age=300');
+    res.set("Cache-Control", "public, max-age=300");
 
     const z = Number(req.params.z);
     const x = Number(req.params.x);
@@ -94,6 +93,10 @@ mosaicTilesRouter.get(
     }
 
     const tile = await requestMosaic256px(z, x, y);
+    if (tile.image.empty()) {
+      return res.status(204).send();
+    }
+
     res.type(tile.image.extension);
     res.send(tile.image.buffer);
   })
@@ -102,7 +105,7 @@ mosaicTilesRouter.get(
 mosaicTilesRouter.get(
   "/:z(\\d+)/:x(\\d+)/:y(\\d+)@1x.png",
   wrapAsyncCallback(async (req, res) => {
-    res.set('Cache-Control', 'public, max-age=300');
+    res.set("Cache-Control", "public, max-age=300");
 
     const z = Number(req.params.z);
     const x = Number(req.params.x);
@@ -116,6 +119,10 @@ mosaicTilesRouter.get(
     }
 
     const tile = await requestMosaic256px(z, x, y);
+    if (tile.image.empty()) {
+      return res.status(204).send();
+    }
+
     res.type(tile.image.extension);
     res.send(tile.image.buffer);
   })
@@ -124,7 +131,7 @@ mosaicTilesRouter.get(
 mosaicTilesRouter.get(
   "/:z(\\d+)/:x(\\d+)/:y(\\d+)@2x.png",
   wrapAsyncCallback(async (req, res) => {
-    res.set('Cache-Control', 'public, max-age=300');
+    res.set("Cache-Control", "public, max-age=300");
 
     const z = Number(req.params.z);
     const x = Number(req.params.x);
@@ -134,6 +141,10 @@ mosaicTilesRouter.get(
     }
 
     const tile = await requestMosaic512px(z, x, y);
+    if (tile.image.empty()) {
+      return res.status(204).send();
+    }
+
     res.type(tile.image.extension);
     res.send(tile.image.buffer);
   })
@@ -168,7 +179,7 @@ async function getMvtConnection() {
 app.get(
   "/outlines/:z(\\d+)/:x(\\d+)/:y(\\d+).mvt",
   wrapAsyncCallback(async (req, res) => {
-    res.set('Cache-Control', 'public, max-age=300');
+    res.set("Cache-Control", "public, max-age=300");
 
     const z = Number(req.params.z);
     const x = Number(req.params.x);
@@ -199,7 +210,7 @@ app.get(
       values: [z, x, y, z, x, y],
     });
     if (rows.length === 0) {
-      return res.status(204).end();
+      return res.status(204).send();
     }
 
     res.set("Content-Encoding", "gzip");
@@ -218,7 +229,7 @@ async function getClustersConnection() {
 app.get(
   "/clusters/:z(\\d+)/:x(\\d+)/:y(\\d+).mvt",
   wrapAsyncCallback(async (req, res) => {
-    res.set('Cache-Control', 'public, max-age=300');
+    res.set("Cache-Control", "public, max-age=300");
 
     const z = Number(req.params.z);
     const x = Number(req.params.x);
@@ -254,7 +265,7 @@ app.get(
       values: [z, z, x, y, z, z, x, y],
     });
     if (rows.length === 0) {
-      return res.status(204).end();
+      return res.status(204).send();
     }
 
     res.set("Content-Encoding", "gzip");

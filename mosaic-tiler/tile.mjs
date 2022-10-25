@@ -22,6 +22,14 @@ class TileImage {
     this.tileSize = tileSize;
   }
 
+  async transformInJpegIfFullyOpaque() {
+    const stats = await sharp(this.buffer).stats();
+    if (stats.isOpaque) {
+      this.extension = "jpg";
+      this.buffer = await sharp(this.buffer).toFormat("jpeg").toBuffer();
+    }
+  }
+
   empty() {
     return this.buffer === null || this.buffer.length === 0;
   }
@@ -71,6 +79,10 @@ class Tile {
     this.y = y;
   }
 
+  transformInJpegIfFullyOpaque() {
+    return this.image.transformInJpegIfFullyOpaque();
+  }
+
   empty() {
     return this.image.empty();
   }
@@ -99,3 +111,67 @@ class Tile {
 }
 
 export { Tile, TileImage };
+
+async function constructParentTileFromChildren(tiles, z, x, y) {
+  const notEmptyTiles = tiles.filter((tile) => !tile.empty());
+  if (!notEmptyTiles.length) {
+    return Tile.createEmpty();
+  }
+
+  let tileSize = notEmptyTiles[0].image.tileSize;
+  for (let i = 1; i < notEmptyTiles.length; ++i) {
+    if (notEmptyTiles[i].image.tileSize !== tileSize) {
+      throw new Error(
+        "constructParentTileFromChildren: size of all input tiles should be the same"
+      );
+    }
+  }
+
+  const [upperLeft, upperRight, lowerLeft, lowerRight] = tiles;
+
+  const composite = [];
+  if (!upperLeft.empty()) {
+    const downscaled = await upperLeft.image.scale(0.5);
+    composite.push({ input: downscaled.buffer, top: 0, left: 0 });
+  }
+  if (!upperRight.empty()) {
+    const downscaled = await upperRight.image.scale(0.5);
+    composite.push({
+      input: downscaled.buffer,
+      top: 0,
+      left: tileSize / 2,
+    });
+  }
+  if (!lowerLeft.empty()) {
+    const downscaled = await lowerLeft.image.scale(0.5);
+    composite.push({
+      input: downscaled.buffer,
+      top: tileSize / 2,
+      left: 0,
+    });
+  }
+  if (!lowerRight.empty()) {
+    const downscaled = await lowerRight.image.scale(0.5);
+    composite.push({
+      input: downscaled.buffer,
+      top: tileSize / 2,
+      left: tileSize / 2,
+    });
+  }
+
+  const buffer = await sharp({
+    create: {
+      width: tileSize,
+      height: tileSize,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite(composite)
+    .png()
+    .toBuffer();
+
+  return new Tile(new TileImage(buffer, "png"), z, x, y);
+}
+
+export { constructParentTileFromChildren };

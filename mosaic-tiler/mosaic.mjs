@@ -1,17 +1,15 @@
-import got from "got";
 import sharp from "sharp";
-import PQueue from "p-queue";
 import cover from "@mapbox/tile-cover";
 import * as db from "./db.mjs";
 import { cacheGet, cachePut, cacheDelete } from "./cache.mjs";
-import { Tile, TileImage } from "./tile.mjs";
+import { Tile, TileImage, constructParentTileFromChildren } from "./tile.mjs";
+import {
+  enqueueTileFetching,
+  enqueueMetadataFetching,
+} from "./titiler_fetcher.mjs";
 
 const TITILER_BASE_URL = process.env.TITILER_BASE_URL;
 const TILE_SIZE = 512;
-
-const tileRequestQueue = new PQueue({ concurrency: 32 });
-const activeTileRequests = new Map();
-const metadataRequestQueue = new PQueue({ concurrency: 32 });
 
 function cacheGetTile(key, z, x, y, extension) {
   if (extension !== "png" && extension !== "jpg") {
@@ -34,50 +32,6 @@ function keyFromS3Url(url) {
     .replace("http://oin-hotosm-staging.s3.amazonaws.com/", "")
     .replace("https://oin-hotosm-staging.s3.amazonaws.com/", "")
     .replace(".tif", "");
-}
-
-async function fetchTile(url) {
-  try {
-    const responsePromise = got(url, {
-      throwHttpErrors: true,
-    });
-
-    const [response, buffer] = await Promise.all([
-      responsePromise,
-      responsePromise.buffer(),
-    ]);
-
-    if (response.statusCode === 204) {
-      return null;
-    }
-
-    return buffer;
-  } catch (err) {
-    if (
-      err.response &&
-      (err.response.statusCode === 404 || err.response.statusCode === 500)
-    ) {
-      return null;
-    } else {
-      throw err;
-    }
-  }
-}
-
-async function enqueueTileFetching(tileUrl, z, x, y) {
-  const url = tileUrl.replace("{z}", z).replace("{x}", x).replace("{y}", y);
-  if (activeTileRequests.get(url)) {
-    return activeTileRequests.get(url);
-  }
-
-  const request = tileRequestQueue
-    .add(() => fetchTile(url))
-    .finally(() => {
-      activeTileRequests.delete(url);
-    });
-
-  activeTileRequests.set(url, request);
-  return request;
 }
 
 async function cacheGetMetadata(key) {
@@ -127,84 +81,6 @@ async function getGeotiffMetadata(uuid) {
       .replace("___x___", "{x}")
       .replace("___y___", "{y}"),
   };
-}
-
-async function fetchTileMetadata(uuid) {
-  try {
-    const url = new URL(`${TITILER_BASE_URL}/cog/info`);
-    url.searchParams.append("url", uuid);
-    const metadata = await got(url.href).json();
-    return metadata;
-  } catch (err) {
-    if (
-      err.response &&
-      (err.response.statusCode === 404 || err.response.statusCode === 500)
-    ) {
-      return null;
-    } else {
-      throw err;
-    }
-  }
-}
-
-const activeMetaRequests = new Map();
-// deduplicates and limits number of concurrent calls for fetchTileMetadata function
-function enqueueMetadataFetching(uuid) {
-  if (activeMetaRequests.get(uuid)) {
-    return activeMetaRequests.get(uuid);
-  }
-
-  const request = metadataRequestQueue
-    .add(() => fetchTileMetadata(uuid))
-    .finally(() => {
-      activeMetaRequests.delete(uuid);
-    });
-
-  activeMetaRequests.set(uuid, request);
-
-  return request;
-}
-
-// TODO: ignore transparent tiles from input
-// produces tile from 4 underlying children tiles
-async function fromChildren(tiles, z, x, y) {
-  const [upperLeft, upperRight, lowerLeft, lowerRight] = tiles;
-
-  const composite = [];
-  if (!upperLeft.empty()) {
-    const downscaled = await upperLeft.image.scale(0.5);
-    composite.push({ input: downscaled.buffer, top: 0, left: 0 });
-  }
-  if (!upperRight.empty()) {
-    const downscaled = await upperRight.image.scale(0.5);
-    composite.push({ input: downscaled.buffer, top: 0, left: TILE_SIZE / 2 });
-  }
-  if (!lowerLeft.empty()) {
-    const downscaled = await lowerLeft.image.scale(0.5);
-    composite.push({ input: downscaled.buffer, top: TILE_SIZE / 2, left: 0 });
-  }
-  if (!lowerRight.empty()) {
-    const downscaled = await lowerRight.image.scale(0.5);
-    composite.push({
-      input: downscaled.buffer,
-      top: TILE_SIZE / 2,
-      left: TILE_SIZE / 2,
-    });
-  }
-
-  const buffer = await sharp({
-    create: {
-      width: TILE_SIZE,
-      height: TILE_SIZE,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    },
-  })
-    .composite(composite)
-    .png()
-    .toBuffer();
-
-  return new Tile(new TileImage(buffer, "png"), z, x, y);
 }
 
 const tileCoverCache = {
@@ -281,7 +157,7 @@ async function source(key, z, x, y, meta, geojson) {
       source(key, z + 1, x * 2 + 1, y * 2 + 1, meta, geojson),
     ]);
 
-    const tile = await fromChildren(tiles, z, x, y);
+    const tile = await constructParentTileFromChildren(tiles, z, x, y);
     tileBuffer = tile.image.buffer;
   } else {
     return Tile.createEmpty(z, x, y);
@@ -327,6 +203,8 @@ async function requestMosaic256px(z, x, y) {
     const parent512 = await requestMosaic512px(z - 1, x >> 1, y >> 1);
     tile256 = await parent512.extractChild(z, x, y);
   }
+
+  tile256.image.transformInJpegIfFullyOpaque();
 
   await cachePutTile(
     tile256.image.buffer,
@@ -410,7 +288,7 @@ async function mosaic(z, x, y) {
     }
 
     tilePromises.push(
-      fromChildren(
+      constructParentTileFromChildren(
         await Promise.all([
           requestMosaic512px(z + 1, x * 2, y * 2),
           requestMosaic512px(z + 1, x * 2 + 1, y * 2),
@@ -455,16 +333,18 @@ async function mosaic(z, x, y) {
     .png()
     .toBuffer();
 
-  let extension = "png";
-  const tileImgStats = await sharp(tileBuffer).stats();
-  if (tileImgStats.isOpaque) {
-    extension = "jpg";
-    tileBuffer = await sharp(tileBuffer).toFormat("jpeg").toBuffer();
-  }
+  const tile = new Tile(new TileImage(tileBuffer, "png"), z, x, y);
+  await tile.image.transformInJpegIfFullyOpaque();
+  await cachePutTile(
+    tile.image.buffer,
+    "__mosaic__",
+    z,
+    x,
+    y,
+    tile.image.extension
+  );
 
-  await cachePutTile(tileBuffer, "__mosaic__", z, x, y, extension);
-
-  return new Tile(new TileImage(tileBuffer, extension), z, x, y);
+  return tile;
 }
 
 async function invalidateMosaicCache() {
@@ -527,10 +407,4 @@ async function invalidateMosaicCache() {
   );
 }
 
-export {
-  requestMosaic512px,
-  requestMosaic256px,
-  tileRequestQueue,
-  metadataRequestQueue,
-  invalidateMosaicCache,
-};
+export { requestMosaic512px, requestMosaic256px, invalidateMosaicCache };
