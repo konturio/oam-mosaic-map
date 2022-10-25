@@ -2,7 +2,7 @@ import sharp from "sharp";
 import cover from "@mapbox/tile-cover";
 import * as db from "./db.mjs";
 import { cacheGet, cachePut, cacheDelete } from "./cache.mjs";
-import { Tile, TileImage } from "./tile.mjs";
+import { Tile, TileImage, constructParentTileFromChildren } from "./tile.mjs";
 import {
   enqueueTileFetching,
   enqueueMetadataFetching,
@@ -83,48 +83,6 @@ async function getGeotiffMetadata(uuid) {
   };
 }
 
-// TODO: ignore transparent tiles from input
-// produces tile from 4 underlying children tiles
-async function fromChildren(tiles, z, x, y) {
-  const [upperLeft, upperRight, lowerLeft, lowerRight] = tiles;
-
-  const composite = [];
-  if (!upperLeft.empty()) {
-    const downscaled = await upperLeft.image.scale(0.5);
-    composite.push({ input: downscaled.buffer, top: 0, left: 0 });
-  }
-  if (!upperRight.empty()) {
-    const downscaled = await upperRight.image.scale(0.5);
-    composite.push({ input: downscaled.buffer, top: 0, left: TILE_SIZE / 2 });
-  }
-  if (!lowerLeft.empty()) {
-    const downscaled = await lowerLeft.image.scale(0.5);
-    composite.push({ input: downscaled.buffer, top: TILE_SIZE / 2, left: 0 });
-  }
-  if (!lowerRight.empty()) {
-    const downscaled = await lowerRight.image.scale(0.5);
-    composite.push({
-      input: downscaled.buffer,
-      top: TILE_SIZE / 2,
-      left: TILE_SIZE / 2,
-    });
-  }
-
-  const buffer = await sharp({
-    create: {
-      width: TILE_SIZE,
-      height: TILE_SIZE,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    },
-  })
-    .composite(composite)
-    .png()
-    .toBuffer();
-
-  return new Tile(new TileImage(buffer, "png"), z, x, y);
-}
-
 const tileCoverCache = {
   0: new WeakMap(),
   1: new WeakMap(),
@@ -199,7 +157,7 @@ async function source(key, z, x, y, meta, geojson) {
       source(key, z + 1, x * 2 + 1, y * 2 + 1, meta, geojson),
     ]);
 
-    const tile = await fromChildren(tiles, z, x, y);
+    const tile = await constructParentTileFromChildren(tiles, z, x, y);
     tileBuffer = tile.image.buffer;
   } else {
     return Tile.createEmpty(z, x, y);
@@ -328,7 +286,7 @@ async function mosaic(z, x, y) {
     }
 
     tilePromises.push(
-      fromChildren(
+      constructParentTileFromChildren(
         await Promise.all([
           requestMosaic512px(z + 1, x * 2, y * 2),
           requestMosaic512px(z + 1, x * 2 + 1, y * 2),
