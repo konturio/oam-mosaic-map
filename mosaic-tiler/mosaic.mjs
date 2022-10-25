@@ -204,6 +204,8 @@ async function requestMosaic256px(z, x, y) {
     tile256 = await parent512.extractChild(z, x, y);
   }
 
+  tile256.image.transformInJpegIfFullyOpaque();
+
   await cachePutTile(
     tile256.image.buffer,
     "__mosaic256px__",
@@ -331,16 +333,18 @@ async function mosaic(z, x, y) {
     .png()
     .toBuffer();
 
-  let extension = "png";
-  const tileImgStats = await sharp(tileBuffer).stats();
-  if (tileImgStats.isOpaque) {
-    extension = "jpg";
-    tileBuffer = await sharp(tileBuffer).toFormat("jpeg").toBuffer();
-  }
+  const tile = new Tile(new TileImage(tileBuffer, "png"), z, x, y);
+  await tile.image.transformInJpegIfFullyOpaque();
+  await cachePutTile(
+    tile.image.buffer,
+    "__mosaic__",
+    z,
+    x,
+    y,
+    tile.image.extension
+  );
 
-  await cachePutTile(tileBuffer, "__mosaic__", z, x, y, extension);
-
-  return new Tile(new TileImage(tileBuffer, extension), z, x, y);
+  return tile;
 }
 
 async function invalidateMosaicCache() {

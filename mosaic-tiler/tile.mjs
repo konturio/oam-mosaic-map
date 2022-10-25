@@ -22,6 +22,14 @@ class TileImage {
     this.tileSize = tileSize;
   }
 
+  async transformInJpegIfFullyOpaque() {
+    const stats = await sharp(this.buffer).stats();
+    if (stats.isOpaque) {
+      this.extension = "jpg";
+      this.buffer = await sharp(this.buffer).toFormat("jpeg").toBuffer();
+    }
+  }
+
   empty() {
     return this.buffer === null || this.buffer.length === 0;
   }
@@ -69,6 +77,10 @@ class Tile {
     this.z = z;
     this.x = x;
     this.y = y;
+  }
+
+  transformInJpegIfFullyOpaque() {
+    return this.image.transformInJpegIfFullyOpaque();
   }
 
   empty() {
