@@ -1,17 +1,15 @@
-import got from "got";
 import sharp from "sharp";
-import PQueue from "p-queue";
 import cover from "@mapbox/tile-cover";
 import * as db from "./db.mjs";
 import { cacheGet, cachePut, cacheDelete } from "./cache.mjs";
 import { Tile, TileImage } from "./tile.mjs";
+import {
+  enqueueTileFetching,
+  enqueueMetadataFetching,
+} from "./titiler_fetcher.mjs";
 
 const TITILER_BASE_URL = process.env.TITILER_BASE_URL;
 const TILE_SIZE = 512;
-
-const tileRequestQueue = new PQueue({ concurrency: 32 });
-const activeTileRequests = new Map();
-const metadataRequestQueue = new PQueue({ concurrency: 32 });
 
 function cacheGetTile(key, z, x, y, extension) {
   if (extension !== "png" && extension !== "jpg") {
@@ -34,50 +32,6 @@ function keyFromS3Url(url) {
     .replace("http://oin-hotosm-staging.s3.amazonaws.com/", "")
     .replace("https://oin-hotosm-staging.s3.amazonaws.com/", "")
     .replace(".tif", "");
-}
-
-async function fetchTile(url) {
-  try {
-    const responsePromise = got(url, {
-      throwHttpErrors: true,
-    });
-
-    const [response, buffer] = await Promise.all([
-      responsePromise,
-      responsePromise.buffer(),
-    ]);
-
-    if (response.statusCode === 204) {
-      return null;
-    }
-
-    return buffer;
-  } catch (err) {
-    if (
-      err.response &&
-      (err.response.statusCode === 404 || err.response.statusCode === 500)
-    ) {
-      return null;
-    } else {
-      throw err;
-    }
-  }
-}
-
-async function enqueueTileFetching(tileUrl, z, x, y) {
-  const url = tileUrl.replace("{z}", z).replace("{x}", x).replace("{y}", y);
-  if (activeTileRequests.get(url)) {
-    return activeTileRequests.get(url);
-  }
-
-  const request = tileRequestQueue
-    .add(() => fetchTile(url))
-    .finally(() => {
-      activeTileRequests.delete(url);
-    });
-
-  activeTileRequests.set(url, request);
-  return request;
 }
 
 async function cacheGetMetadata(key) {
@@ -127,42 +81,6 @@ async function getGeotiffMetadata(uuid) {
       .replace("___x___", "{x}")
       .replace("___y___", "{y}"),
   };
-}
-
-async function fetchTileMetadata(uuid) {
-  try {
-    const url = new URL(`${TITILER_BASE_URL}/cog/info`);
-    url.searchParams.append("url", uuid);
-    const metadata = await got(url.href).json();
-    return metadata;
-  } catch (err) {
-    if (
-      err.response &&
-      (err.response.statusCode === 404 || err.response.statusCode === 500)
-    ) {
-      return null;
-    } else {
-      throw err;
-    }
-  }
-}
-
-const activeMetaRequests = new Map();
-// deduplicates and limits number of concurrent calls for fetchTileMetadata function
-function enqueueMetadataFetching(uuid) {
-  if (activeMetaRequests.get(uuid)) {
-    return activeMetaRequests.get(uuid);
-  }
-
-  const request = metadataRequestQueue
-    .add(() => fetchTileMetadata(uuid))
-    .finally(() => {
-      activeMetaRequests.delete(uuid);
-    });
-
-  activeMetaRequests.set(uuid, request);
-
-  return request;
 }
 
 // TODO: ignore transparent tiles from input
@@ -527,10 +445,4 @@ async function invalidateMosaicCache() {
   );
 }
 
-export {
-  requestMosaic512px,
-  requestMosaic256px,
-  tileRequestQueue,
-  metadataRequestQueue,
-  invalidateMosaicCache,
-};
+export { requestMosaic512px, requestMosaic256px, invalidateMosaicCache };

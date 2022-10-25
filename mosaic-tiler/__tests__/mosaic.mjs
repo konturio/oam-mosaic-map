@@ -76,10 +76,12 @@ process.env.TITILER_BASE_URL = "https://test-apps02.konturlabs.com/titiler/";
 const {
   requestMosaic256px,
   requestMosaic512px,
-  tileRequestQueue,
-  metadataRequestQueue,
+
   invalidateMosaicCache,
 } = await import("../mosaic.mjs");
+const { tileRequestQueue, metadataRequestQueue } = await import(
+  "../titiler_fetcher.mjs"
+);
 
 beforeEach(() => {
   cache.reset();
