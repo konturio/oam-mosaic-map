@@ -14,6 +14,10 @@ import {
   requestMosaic256px,
   invalidateMosaicCache,
 } from "./mosaic.mjs";
+import {
+  requestReor20DepthTile,
+  requestReor20DischargeTile,
+} from "./reor20.mjs";
 
 dotenv.config({ path: ".env" });
 
@@ -152,6 +156,46 @@ mosaicTilesRouter.get(
 
 app.use("/tiles", mosaicTilesRouter);
 app.use("/oam/mosaic", mosaicTilesRouter);
+
+app.get(
+  "/reor20/depth/:z(\\d+)/:x(\\d+)/:y(\\d+).png",
+  wrapAsyncCallback(async (req, res) => {
+    const z = Number(req.params.z);
+    const x = Number(req.params.x);
+    const y = Number(req.params.y);
+    if (isInvalidZxy(z, x, y)) {
+      return res.status(404).send("Out of bounds");
+    }
+
+    const tile = await requestReor20DepthTile(z, x, y);
+    if (tile.image.empty()) {
+      return res.status(204).send();
+    }
+
+    res.type(tile.image.extension);
+    res.send(tile.image.buffer);
+  })
+);
+
+app.get(
+  "/reor20/discharge/:z(\\d+)/:x(\\d+)/:y(\\d+).png",
+  wrapAsyncCallback(async (req, res) => {
+    const z = Number(req.params.z);
+    const x = Number(req.params.x);
+    const y = Number(req.params.y);
+    if (isInvalidZxy(z, x, y)) {
+      return res.status(404).send("Out of bounds");
+    }
+
+    const tile = await requestReor20DischargeTile(z, x, y);
+    if (tile.image.empty()) {
+      return res.status(204).send();
+    }
+
+    res.type(tile.image.extension);
+    res.send(tile.image.buffer);
+  })
+);
 
 app.get("/mosaic_viewer", function (req, res, next) {
   ejs.renderFile(
