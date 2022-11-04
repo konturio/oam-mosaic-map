@@ -1,12 +1,15 @@
 import got from "got";
 import PQueue from "p-queue";
+import { Tile, TileImage } from "./tile.mjs";
 
 const TITILER_BASE_URL = process.env.TITILER_BASE_URL;
 
 const tileRequestQueue = new PQueue({ concurrency: 32 });
 const activeTileRequests = new Map();
 
-async function fetchTile(url) {
+async function fetchTile(tileUrl, z, x, y) {
+  const url = tileUrl.replace("{z}", z).replace("{x}", x).replace("{y}", y);
+
   try {
     const responsePromise = got(url, {
       throwHttpErrors: true,
@@ -21,13 +24,13 @@ async function fetchTile(url) {
       return null;
     }
 
-    return buffer;
+    return new Tile(new TileImage(buffer, "png"), z, x, y);
   } catch (err) {
     if (
       err.response &&
       (err.response.statusCode === 404 || err.response.statusCode === 500)
     ) {
-      return null;
+      return Tile.createEmpty(z, x, y);
     } else {
       throw err;
     }
@@ -41,7 +44,7 @@ async function enqueueTileFetching(tileUrl, z, x, y) {
   }
 
   const request = tileRequestQueue
-    .add(() => fetchTile(url))
+    .add(() => fetchTile(tileUrl, z, x, y))
     .finally(() => {
       activeTileRequests.delete(url);
     });

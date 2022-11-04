@@ -147,8 +147,9 @@ async function source(key, z, x, y, meta, geojson) {
     return Tile.createEmpty(z, x, y);
   }
 
+  let tile;
   if (z >= meta.minzoom && z <= meta.maxzoom) {
-    tileBuffer = await enqueueTileFetching(meta.tileUrl, z, x, y);
+    tile = await enqueueTileFetching(meta.tileUrl, z, x, y);
   } else if (z < meta.maxzoom) {
     const tiles = await Promise.all([
       source(key, z + 1, x * 2, y * 2, meta, geojson),
@@ -157,15 +158,14 @@ async function source(key, z, x, y, meta, geojson) {
       source(key, z + 1, x * 2 + 1, y * 2 + 1, meta, geojson),
     ]);
 
-    const tile = await constructParentTileFromChildren(tiles, z, x, y);
-    tileBuffer = tile.image.buffer;
+    tile = await constructParentTileFromChildren(tiles, z, x, y);
   } else {
     return Tile.createEmpty(z, x, y);
   }
 
-  await cachePutTile(tileBuffer, key, z, x, y, "png");
+  await cachePutTile(tile.image.buffer, key, z, x, y, tile.image.extension);
 
-  return new Tile(new TileImage(tileBuffer, "png"), z, x, y);
+  return tile;
 }
 
 const activeMosaicRequests = new Map();
