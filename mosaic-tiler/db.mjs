@@ -2,7 +2,8 @@ import pg from "pg";
 
 const pool = new pg.Pool({
   poolSize: parseInt(process.env.DB_POOL_SIZE) || 16,
-  ssl: {
+  ssl: process.env.DB_DISABLE_SSL === 'true' ? false :
+  {
     rejectUnauthorized: false,
   },
 });
