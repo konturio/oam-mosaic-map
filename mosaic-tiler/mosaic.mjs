@@ -1,7 +1,7 @@
 import sharp from "sharp";
 import cover from "@mapbox/tile-cover";
 import * as db from "./db.mjs";
-import { cacheGet, cachePut, cacheDelete } from "./cache.mjs";
+import { cacheGet, cachePut, cacheDelete, cachePurgeMosaic } from "./cache.mjs";
 import { Tile, TileImage, constructParentTileFromChildren } from "./tile.mjs";
 import {
   enqueueTileFetching,
@@ -379,7 +379,7 @@ async function invalidateMosaicCache() {
     return;
   }
 
-  const deletePromises = [];
+  const invalidTilePaths = [];
   let latestUploadedAt = rows[0].uploaded_at;
   for (const row of rows) {
     const url = row.uuid;
@@ -390,12 +390,20 @@ async function invalidateMosaicCache() {
     const { maxzoom } = await getGeotiffMetadata(url);
     for (let zoom = 0; zoom <= maxzoom; ++zoom) {
       for (const [x, y, z] of getTileCover(geojson, zoom)) {
-        deletePromises.push(cacheDelete(`__mosaic__/${z}/${x}/${y}.png`));
-        deletePromises.push(cacheDelete(`__mosaic__/${z}/${x}/${y}.jpg`));
+        invalidTilePaths.push(`__mosaic__/${z}/${x}/${y}.png`);
+        invalidTilePaths.push(`__mosaic__/${z}/${x}/${y}.jpg`);
       }
     }
   }
-  await Promise.all(deletePromises);
+  if (invalidTilePaths.length > 1_000_000) {
+    // NOTE: if there are too many "mosaic" tiles to invalid it is much
+    // faster to delete the whole "mosaic" cache. it is ok to purge "mosaic"
+    // cache because cache of "pieces" will still be there so it is fast
+    // to rebuild "mosaic" cache.
+    await cachePurgeMosaic();
+  } else {
+    await Promise.all(invalidTilePaths.map(path => cacheDelete(path)));
+  }
 
   await cachePut(
     Buffer.from(
