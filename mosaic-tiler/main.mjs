@@ -303,7 +303,9 @@ function runQueuesStatusLogger() {
 
 function runMosaicCacheInvalidationJob() {
   setInterval(() => {
-    invalidateMosaicCache();
+    invalidateMosaicCache().catch(err => {
+      console.error('>error in invalidateMosaicCache', err);
+    });
   }, 30000);
 }
 
