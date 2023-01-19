@@ -43,13 +43,20 @@ async function cacheGet(key) {
   }
 }
 
-function cacheDelete(key) {
+async function fileExists(path) {
+  try {
+    await fs.promises.stat(path);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function cacheDelete(key) {
   const path = `${TILES_CACHE_DIR_PATH}/${key}`;
-  if (fs.existsSync(path)) {
+  if (await fileExists(path)) {
     return fs.promises.unlink(path);
   }
-
-  return Promise.resolve();
 }
 
 async function cachePut(buffer, key) {
