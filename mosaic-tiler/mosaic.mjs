@@ -72,6 +72,7 @@ async function getGeotiffMetadata(uuid) {
       tileUrl.searchParams.append("bidx", idx);
     }
   }
+  tileUrl.searchParams.append("nodata", "0");
 
   return {
     minzoom: metadata.minzoom,
