@@ -59,6 +59,14 @@ class CacheMem extends EventEmitter {
   reset() {
     this.cache.clear();
   }
+
+  purgeMosaic() {
+    for (const key of cache.keys()) {
+      if (key.startsWith("__mosaic__")) {
+        cache.delete(key);
+      }
+    }
+  }
 }
 
 const cache = new CacheMem();
@@ -68,6 +76,7 @@ jest.unstable_mockModule("../cache.mjs", () => {
     cacheGet: cache.get.bind(cache),
     cachePut: cache.put.bind(cache),
     cacheDelete: cache.delete.bind(cache),
+    cachePurgeMosaic: cache.purgeMosaic.bind(cache)
   };
 });
 
