@@ -1,6 +1,8 @@
 import { jest } from "@jest/globals";
 import fs from "fs";
 import EventEmitter from "events";
+import pixelmatch from "pixelmatch";
+import { PNG } from "pngjs";
 
 jest.setTimeout(30000);
 
@@ -76,7 +78,7 @@ jest.unstable_mockModule("../cache.mjs", () => {
     cacheGet: cache.get.bind(cache),
     cachePut: cache.put.bind(cache),
     cacheDelete: cache.delete.bind(cache),
-    cachePurgeMosaic: cache.purgeMosaic.bind(cache)
+    cachePurgeMosaic: cache.purgeMosaic.bind(cache),
   };
 });
 
@@ -91,6 +93,17 @@ const {
 const { tileRequestQueue, metadataRequestQueue } = await import(
   "../titiler_fetcher.mjs"
 );
+
+function compareTilesPixelmatch(png1, png2, tileSize) {
+  return pixelmatch(
+    PNG.sync.read(png1).data,
+    PNG.sync.read(png2).data,
+    null,
+    tileSize,
+    tileSize,
+    { threshold: 0 }
+  );
+}
 
 beforeEach(() => {
   cache.reset();
@@ -134,21 +147,24 @@ test("mosaic(14, 9485, 5610) and 2 parent tiles", async () => {
   ]);
 
   expect(
-    Buffer.compare(
+    compareTilesPixelmatch(
       fs.readFileSync("./__tests__/mosaic@2x-14-9485-5610.png"),
-      tile.image.buffer
+      tile.image.buffer,
+      512
     )
   ).toBe(0);
   expect(
-    Buffer.compare(
+    compareTilesPixelmatch(
       fs.readFileSync("./__tests__/mosaic@2x-13-4742-2805.png"),
-      parentTile.image.buffer
+      parentTile.image.buffer,
+      512
     )
   ).toBe(0);
   expect(
-    Buffer.compare(
+    compareTilesPixelmatch(
       fs.readFileSync("./__tests__/mosaic@2x-12-2371-1402.png"),
-      parentParentTile.image.buffer
+      parentParentTile.image.buffer,
+      512
     )
   ).toBe(0);
 });
@@ -186,9 +202,10 @@ test("mosaic256px(14, 9485, 5610)", async () => {
   const tile = await requestMosaic256px(15, 18970, 11220);
 
   expect(
-    Buffer.compare(
+    compareTilesPixelmatch(
       fs.readFileSync("./__tests__/mosaic@1x-15-18970-11220.png"),
-      tile.image.buffer
+      tile.image.buffer,
+      256
     )
   ).toBe(0);
 });
@@ -219,7 +236,7 @@ test("mosaic(11, 1233, 637)", async () => {
   expect(metadataRequestQueue.size).toBe(0);
 
   const expected = fs.readFileSync("./__tests__/mosaic@2x-11-1233-637.png");
-  expect(Buffer.compare(expected, tile.image.buffer)).toBe(0);
+  expect(compareTilesPixelmatch(expected, tile.image.buffer, 512)).toBe(0);
 });
 
 test("mosaic cache invalidation", async () => {
