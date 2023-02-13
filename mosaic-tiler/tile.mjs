@@ -69,7 +69,7 @@ class Tile {
     this.image = image;
 
     if (!Number.isInteger(z) || !Number.isInteger(x) || !Number.isInteger(y)) {
-      throw new Error("z, x, y should b integer");
+      throw new Error(`z, x, y should b integer. input: z = ${z}, x = ${x}, y = ${y}`);
     }
     if (areZxyNotValid(z, x, y)) {
       throw new Error(`tile coordinates: ${z}/${x}/${y} are not valid`);
