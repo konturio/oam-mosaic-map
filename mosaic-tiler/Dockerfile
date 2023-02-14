@@ -7,4 +7,4 @@ COPY . .
 
 EXPOSE 8080
 
-CMD [ "node", "main.mjs" ]
+CMD [ "node", "src/main.mjs" ]

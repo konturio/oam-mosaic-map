@@ -11,7 +11,7 @@ function registerDbQueryHandler(name, handler) {
   dbQueryHandlers.set(name, handler);
 }
 
-jest.unstable_mockModule("../db.mjs", () => ({
+jest.unstable_mockModule("../src/db.mjs", () => ({
   getClient: jest.fn(function () {
     const query = ({ name, values }) => {
       if (dbQueryHandlers.has(name)) {
@@ -73,7 +73,7 @@ class CacheMem extends EventEmitter {
 
 const cache = new CacheMem();
 
-jest.unstable_mockModule("../cache.mjs", () => {
+jest.unstable_mockModule("../src/cache.mjs", () => {
   return {
     cacheGet: cache.get.bind(cache),
     cachePut: cache.put.bind(cache),
