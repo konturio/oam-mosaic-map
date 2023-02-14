@@ -393,10 +393,12 @@ async function invalidateMosaicCache() {
       for (const [x, y, z] of getTileCover(geojson, zoom)) {
         invalidTilePaths.push(`__mosaic__/${z}/${x}/${y}.png`);
         invalidTilePaths.push(`__mosaic__/${z}/${x}/${y}.jpg`);
+        invalidTilePaths.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.png`);
+        invalidTilePaths.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.jpg`);
       }
     }
   }
-  if (invalidTilePaths.length > 1_000_000) {
+  if (invalidTilePaths.length > 2_000_000) {
     // NOTE: if there are too many "mosaic" tiles to invalid it is much
     // faster to delete the whole "mosaic" cache. it is ok to purge "mosaic"
     // cache because cache of "pieces" will still be there so it is fast

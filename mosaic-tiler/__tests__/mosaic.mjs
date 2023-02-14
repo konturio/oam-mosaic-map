@@ -283,6 +283,8 @@ test("mosaic cache invalidation", async () => {
   expect(invalidatedCacheKeys.has("__mosaic__/0/0/0.png")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/0/0/0.jpg")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/11/1233/637.png")).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic256px__/12/2466/1274.png")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/11/1233/637.jpg")).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic256px__/12/2466/1274.jpg")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/11/1233/638.png")).toBe(false);
 });
