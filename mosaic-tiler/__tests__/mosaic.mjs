@@ -84,14 +84,14 @@ jest.unstable_mockModule("../cache.mjs", () => {
 
 process.env.TITILER_BASE_URL = "https://test-apps02.konturlabs.com/titiler/";
 
-const {
-  requestMosaic256px,
-  requestMosaic512px,
-
-  invalidateMosaicCache,
-} = await import("../mosaic.mjs");
+const { requestMosaic256px, requestMosaic512px } = await import(
+  "../src/mosaic.mjs"
+);
+const { invalidateMosaicCache } = await import(
+  "../src/mosaic_cache_invalidation_job.mjs"
+);
 const { tileRequestQueue, metadataRequestQueue } = await import(
-  "../titiler_fetcher.mjs"
+  "../src/titiler_fetcher.mjs"
 );
 
 function compareTilesPixelmatch(png1, png2, tileSize) {
@@ -283,8 +283,12 @@ test("mosaic cache invalidation", async () => {
   expect(invalidatedCacheKeys.has("__mosaic__/0/0/0.png")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/0/0/0.jpg")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/11/1233/637.png")).toBe(true);
-  expect(invalidatedCacheKeys.has("__mosaic256px__/12/2466/1274.png")).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic256px__/12/2466/1274.png")).toBe(
+    true
+  );
   expect(invalidatedCacheKeys.has("__mosaic__/11/1233/637.jpg")).toBe(true);
-  expect(invalidatedCacheKeys.has("__mosaic256px__/12/2466/1274.jpg")).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic256px__/12/2466/1274.jpg")).toBe(
+    true
+  );
   expect(invalidatedCacheKeys.has("__mosaic__/11/1233/638.png")).toBe(false);
 });

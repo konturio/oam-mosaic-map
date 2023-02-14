@@ -9,11 +9,8 @@ import ejs from "ejs";
 import zlib from "zlib";
 import { cacheInit, cachePurgeMosaic } from "./cache.mjs";
 import { tileRequestQueue, metadataRequestQueue } from "./titiler_fetcher.mjs";
-import {
-  requestMosaic512px,
-  requestMosaic256px,
-  invalidateMosaicCache,
-} from "./mosaic.mjs";
+import { requestMosaic512px, requestMosaic256px } from "./mosaic.mjs";
+import { invalidateMosaicCache } from "./mosaic_cache_invalidation_job.mjs";
 
 dotenv.config({ path: ".env" });
 
@@ -303,8 +300,8 @@ function runQueuesStatusLogger() {
 
 function runMosaicCacheInvalidationJob() {
   setInterval(() => {
-    invalidateMosaicCache().catch(err => {
-      console.error('>error in invalidateMosaicCache', err);
+    invalidateMosaicCache().catch((err) => {
+      console.error(">error in invalidateMosaicCache", err);
     });
   }, 30000);
 }
