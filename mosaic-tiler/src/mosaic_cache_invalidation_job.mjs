@@ -53,15 +53,7 @@ async function invalidateMosaicCache() {
       }
     }
   }
-  if (invalidTilePaths.length > 2_000_000) {
-    // NOTE: if there are too many "mosaic" tiles to invalid it is much
-    // faster to delete the whole "mosaic" cache. it is ok to purge "mosaic"
-    // cache because cache of "pieces" will still be there so it is fast
-    // to rebuild "mosaic" cache.
-    await cachePurgeMosaic();
-  } else {
-    await Promise.all(invalidTilePaths.map((path) => cacheDelete(path)));
-  }
+  await Promise.all(invalidTilePaths.map((path) => cacheDelete(path)));
 
   await cachePut(
     Buffer.from(
