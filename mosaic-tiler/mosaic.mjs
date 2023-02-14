@@ -7,6 +7,7 @@ import {
   enqueueMetadataFetching,
 } from "./titiler_fetcher.mjs";
 import { getTileCover } from "./tile_cover.mjs";
+import { keyFromS3Url } from "./key_from_s3_url.mjs";
 
 const TITILER_BASE_URL = process.env.TITILER_BASE_URL;
 const TILE_SIZE = 512;
@@ -23,15 +24,6 @@ function cachePutTile(tile, key, z, x, y, extension) {
     throw new Error(".png and .jpg are the only allowed extensions");
   }
   return cachePut(tile, `${key}/${z}/${x}/${y}.${extension}`);
-}
-
-function keyFromS3Url(url) {
-  return url
-    .replace("http://oin-hotosm.s3.amazonaws.com/", "")
-    .replace("https://oin-hotosm.s3.amazonaws.com/", "")
-    .replace("http://oin-hotosm-staging.s3.amazonaws.com/", "")
-    .replace("https://oin-hotosm-staging.s3.amazonaws.com/", "")
-    .replace(".tif", "");
 }
 
 async function cacheGetMetadata(key) {
