@@ -2,14 +2,11 @@ import sharp from "sharp";
 import * as db from "./db.mjs";
 import { cacheGet, cachePut, cacheDelete, cachePurgeMosaic } from "./cache.mjs";
 import { Tile, TileImage, constructParentTileFromChildren } from "./tile.mjs";
-import {
-  enqueueTileFetching,
-  enqueueMetadataFetching,
-} from "./titiler_fetcher.mjs";
+import { enqueueTileFetching } from "./titiler_fetcher.mjs";
+import { getGeotiffMetadata } from "./metadata.mjs";
 import { getTileCover } from "./tile_cover.mjs";
 import { keyFromS3Url } from "./key_from_s3_url.mjs";
 
-const TITILER_BASE_URL = process.env.TITILER_BASE_URL;
 const TILE_SIZE = 512;
 
 function cacheGetTile(key, z, x, y, extension) {
@@ -24,56 +21,6 @@ function cachePutTile(tile, key, z, x, y, extension) {
     throw new Error(".png and .jpg are the only allowed extensions");
   }
   return cachePut(tile, `${key}/${z}/${x}/${y}.${extension}`);
-}
-
-async function cacheGetMetadata(key) {
-  const buffer = await cacheGet(`__metadata__/${key}.json`);
-  if (buffer === null) {
-    return null;
-  }
-
-  return JSON.parse(buffer.toString());
-}
-
-function cachePutMetadata(metadata, key) {
-  const buffer = Buffer.from(JSON.stringify(metadata));
-  return cachePut(buffer, `__metadata__/${key}.json`);
-}
-
-async function getGeotiffMetadata(uuid) {
-  const key = keyFromS3Url(uuid);
-
-  let metadata = await cacheGetMetadata(key);
-  if (metadata === null) {
-    metadata = await enqueueMetadataFetching(uuid);
-  }
-
-  await cachePutMetadata(metadata, key);
-
-  if (!metadata) {
-    return null;
-  }
-
-  const tileUrl = new URL(
-    `${TITILER_BASE_URL}/cog/tiles/WebMercatorQuad/___z___/___x___/___y___@2x`
-  );
-  tileUrl.searchParams.append("url", uuid);
-  for (let i = 0; i < metadata.band_metadata.length; ++i) {
-    if (metadata.colorinterp[i] != "undefined") {
-      const [idx] = metadata.band_metadata[i];
-      tileUrl.searchParams.append("bidx", idx);
-    }
-  }
-  tileUrl.searchParams.append("nodata", "0");
-
-  return {
-    minzoom: metadata.minzoom,
-    maxzoom: metadata.maxzoom,
-    tileUrl: tileUrl.href
-      .replace("___z___", "{z}")
-      .replace("___x___", "{x}")
-      .replace("___y___", "{y}"),
-  };
 }
 
 // request tile for single image
