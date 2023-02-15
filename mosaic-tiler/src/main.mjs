@@ -152,7 +152,7 @@ app.use("/oam/mosaic", mosaicTilesRouter);
 
 app.get("/mosaic_viewer", function (req, res, next) {
   ejs.renderFile(
-    "./mosaic_viewer.ejs",
+    "./src/mosaic_viewer.ejs",
     { baseUrl: process.env.BASE_URL },
     (err, data) => {
       if (err) {
