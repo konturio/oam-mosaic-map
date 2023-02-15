@@ -1,5 +1,10 @@
 import * as db from "./db.mjs";
-import { cacheGet, cachePut, cacheDelete, cachePurgeMosaic } from "./cache.mjs";
+import {
+  cacheGet,
+  cachePut,
+  cacheDelete,
+  mosaicTilesIterable,
+} from "./cache.mjs";
 import { getGeotiffMetadata } from "./metadata.mjs";
 import { getTileCover } from "./tile_cover.mjs";
 
@@ -35,7 +40,7 @@ async function invalidateMosaicCache() {
     return;
   }
 
-  const invalidTilePaths = [];
+  const staleCacheKeys = new Set();
   let latestUploadedAt = rows[0].uploaded_at;
   for (const row of rows) {
     const url = row.uuid;
@@ -46,14 +51,31 @@ async function invalidateMosaicCache() {
     const { maxzoom } = await getGeotiffMetadata(url);
     for (let zoom = 0; zoom <= maxzoom; ++zoom) {
       for (const [x, y, z] of getTileCover(geojson, zoom)) {
-        invalidTilePaths.push(`__mosaic__/${z}/${x}/${y}.png`);
-        invalidTilePaths.push(`__mosaic__/${z}/${x}/${y}.jpg`);
-        invalidTilePaths.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.png`);
-        invalidTilePaths.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.jpg`);
+        staleCacheKeys.add(`__mosaic__/${z}/${x}/${y}.png`);
+        staleCacheKeys.add(`__mosaic__/${z}/${x}/${y}.jpg`);
+        staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.png`);
+        staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.jpg`);
       }
     }
   }
-  await Promise.all(invalidTilePaths.map((path) => cacheDelete(path)));
+
+  /*
+    if tile coverage of area that need to be invalidated is too large
+    it should be faster to iterate through all tiles currently present
+    in cache and check if they are present in invalidated area coverage
+    rather than making thousands or millions of rm calls.
+  */
+  if (staleCacheKeys.size > 10_000) {
+    for await (const key of mosaicTilesIterable()) {
+      if (staleCacheKeys.has(key)) {
+        await cacheDelete(key);
+      }
+    }
+  } else {
+    for (const key of staleCacheKeys.keys()) {
+      await cacheDelete(key);
+    }
+  }
 
   await cachePut(
     Buffer.from(

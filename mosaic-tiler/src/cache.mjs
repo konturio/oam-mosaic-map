@@ -1,4 +1,5 @@
 import fs from "fs";
+import { opendir } from "node:fs/promises";
 import uniqueString from "unique-string";
 import { dirname } from "path";
 
@@ -29,6 +30,29 @@ async function cacheInit() {
 
 function cachePurgeMosaic() {
   return fs.promises.rmdir(`${TILES_CACHE_DIR_PATH}/__mosaic__`);
+}
+
+function mosaicTilesIterable() {
+  return {
+    async *[Symbol.asyncIterator]() {
+      for (const mosaicTilesDir of ["__mosaic__", "__mosaic256px__"]) {
+        const mosaicTilesPath = `${TILES_CACHE_DIR_PATH}/${mosaicTilesDir}`;
+        const dir = await opendir(mosaicTilesPath);
+        for await (const direntZoom of dir) {
+          const zoom = direntZoom.name;
+          const dirZoom = await opendir(`${mosaicTilesPath}/${zoom}`);
+          for await (const direntX of dirZoom) {
+            const x = direntX.name;
+            const dirX = await opendir(`${mosaicTilesPath}/${zoom}/${x}`);
+            for await (const direntY of dirX) {
+              const y = direntY.name;
+              yield `${mosaicTilesDir}/${zoom}/${x}/${y}`;
+            }
+          }
+        }
+      }
+    },
+  };
 }
 
 async function cacheGet(key) {
@@ -76,4 +100,11 @@ async function cachePut(buffer, key) {
   await fs.promises.rename(temp, path);
 }
 
-export { cacheInit, cachePurgeMosaic, cacheGet, cachePut, cacheDelete };
+export {
+  cacheInit,
+  cachePurgeMosaic,
+  cacheGet,
+  cachePut,
+  cacheDelete,
+  mosaicTilesIterable,
+};
