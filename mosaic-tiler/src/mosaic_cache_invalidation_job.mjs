@@ -53,8 +53,16 @@ async function invalidateMosaicCache() {
       for (const [x, y, z] of getTileCover(geojson, zoom)) {
         staleCacheKeys.add(`__mosaic__/${z}/${x}/${y}.png`);
         staleCacheKeys.add(`__mosaic__/${z}/${x}/${y}.jpg`);
+
         staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.png`);
+        staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2}.png`);
+        staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2 + 1}.png`);
+        staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2 + 1}.png`);
+
         staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.jpg`);
+        staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2}.jpg`);
+        staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2 + 1}.jpg`);
+        staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2 + 1}.jpg`);
       }
     }
   }
