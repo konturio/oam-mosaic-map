@@ -58,6 +58,22 @@ class CacheMem extends EventEmitter {
     this.cache.delete(key);
   }
 
+  mosaicTilesIterable() {
+    const that = this;
+    return {
+      async *[Symbol.asyncIterator]() {
+        for (const key of that.cache.keys()) {
+          if (
+            key.startsWith("__mosaic__") ||
+            key.startsWith("__mosaic256px__")
+          ) {
+            yield key;
+          }
+        }
+      },
+    };
+  }
+
   reset() {
     this.cache.clear();
   }
@@ -79,6 +95,7 @@ jest.unstable_mockModule("../src/cache.mjs", () => {
     cachePut: cache.put.bind(cache),
     cacheDelete: cache.delete.bind(cache),
     cachePurgeMosaic: cache.purgeMosaic.bind(cache),
+    mosaicTilesIterable: cache.mosaicTilesIterable.bind(cache),
   };
 });
 
@@ -265,6 +282,18 @@ test("mosaic cache invalidation", async () => {
 
   const infoBefore = { last_updated: "2022-10-05T03:40:19.040Z" };
   await cache.put(Buffer.from(JSON.stringify(infoBefore)), "__info__.json");
+
+  await Promise.all([
+    cache.put(null, "__mosaic__/0/0/0.png"),
+    cache.put(null, "__mosaic__/0/0/0.jpg"),
+    cache.put(null, "__mosaic__/11/1233/637.png"),
+    cache.put(null, "__mosaic256px__/12/2466/1274.png"),
+    cache.put(null, "__mosaic__/11/1233/637.jpg"),
+    cache.put(null, "__mosaic256px__/12/2466/1274.jpg"),
+    cache.put(null, "__mosaic__/11/1233/637.jpg"),
+    cache.put(null, "__mosaic256px__/12/2466/1274.jpg"),
+    cache.put(null, "__mosaic__/11/1233/638.png"),
+  ]);
 
   cache.on("delete", cacheDeleteEventListener);
   await invalidateMosaicCache();
