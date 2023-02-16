@@ -115,7 +115,7 @@ export { Tile, TileImage };
 async function constructParentTileFromChildren(tiles, z, x, y) {
   const notEmptyTiles = tiles.filter((tile) => !tile.empty());
   if (!notEmptyTiles.length) {
-    return Tile.createEmpty();
+    return Tile.createEmpty(z, x, y);
   }
 
   let tileSize = notEmptyTiles[0].image.tileSize;
