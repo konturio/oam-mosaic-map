@@ -4,4 +4,5 @@
 .vs
 **/target
 **/node_modules
+**/coverage
 npm/cli-*
