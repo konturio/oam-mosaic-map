@@ -2,6 +2,7 @@ import fs from "fs";
 import { opendir } from "node:fs/promises";
 import uniqueString from "unique-string";
 import { dirname } from "path";
+import { globbyStream } from "globby";
 
 const TILES_CACHE_DIR_PATH = process.env.TILES_CACHE_DIR_PATH;
 const TMP_DIR_PATH = TILES_CACHE_DIR_PATH + "/tmp";
@@ -50,6 +51,26 @@ function mosaicTilesIterable() {
             }
           }
         }
+      }
+    },
+  };
+}
+
+function metadataJsonsIterable() {
+  return {
+    async *[Symbol.asyncIterator]() {
+      for await (const path of globbyStream(`${TILES_CACHE_DIR_PATH}/__metadata__/**/*.json`)) {
+        yield path.replace(`${TILES_CACHE_DIR_PATH}/`, "");
+      }
+    },
+  };
+}
+
+function singleImageTilesIterable(key) {
+  return {
+    async *[Symbol.asyncIterator]() {
+      for await (const path of globbyStream(`${TILES_CACHE_DIR_PATH}/${key}/**/*.png`)) {
+        yield path.replace(`${TILES_CACHE_DIR_PATH}/`, "");
       }
     },
   };
@@ -107,4 +128,6 @@ export {
   cachePut,
   cacheDelete,
   mosaicTilesIterable,
+  metadataJsonsIterable,
+  singleImageTilesIterable,
 };

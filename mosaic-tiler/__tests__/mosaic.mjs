@@ -63,10 +63,33 @@ class CacheMem extends EventEmitter {
     return {
       async *[Symbol.asyncIterator]() {
         for (const key of that.cache.keys()) {
-          if (
-            key.startsWith("__mosaic__") ||
-            key.startsWith("__mosaic256px__")
-          ) {
+          if (key.startsWith("__mosaic__") || key.startsWith("__mosaic256px__")) {
+            yield key;
+          }
+        }
+      },
+    };
+  }
+
+  metadataJsonsIterable() {
+    const that = this;
+    return {
+      async *[Symbol.asyncIterator]() {
+        for (const key of that.cache.keys()) {
+          if (key.startsWith("__metadata__")) {
+            yield key;
+          }
+        }
+      },
+    };
+  }
+
+  singleImageTilesIterable(uuid) {
+    const that = this;
+    return {
+      async *[Symbol.asyncIterator]() {
+        for (const key of that.cache.keys()) {
+          if (key.startsWith(uuid)) {
             yield key;
           }
         }
@@ -96,30 +119,22 @@ jest.unstable_mockModule("../src/cache.mjs", () => {
     cacheDelete: cache.delete.bind(cache),
     cachePurgeMosaic: cache.purgeMosaic.bind(cache),
     mosaicTilesIterable: cache.mosaicTilesIterable.bind(cache),
+    metadataJsonsIterable: cache.metadataJsonsIterable.bind(cache),
+    singleImageTilesIterable: cache.singleImageTilesIterable.bind(cache),
   };
 });
 
 process.env.TITILER_BASE_URL = "https://test-apps02.konturlabs.com/titiler/";
 
-const { requestMosaic256px, requestMosaic512px } = await import(
-  "../src/mosaic.mjs"
-);
-const { invalidateMosaicCache } = await import(
-  "../src/mosaic_cache_invalidation_job.mjs"
-);
-const { tileRequestQueue, metadataRequestQueue } = await import(
-  "../src/titiler_fetcher.mjs"
-);
+const { requestMosaic256px, requestMosaic512px } = await import("../src/mosaic.mjs");
+const { getGeotiffMetadata } = await import("../src/metadata.mjs");
+const { invalidateMosaicCache } = await import("../src/mosaic_cache_invalidation_job.mjs");
+const { tileRequestQueue, metadataRequestQueue } = await import("../src/titiler_fetcher.mjs");
 
 function compareTilesPixelmatch(png1, png2, tileSize) {
-  return pixelmatch(
-    PNG.sync.read(png1).data,
-    PNG.sync.read(png2).data,
-    null,
-    tileSize,
-    tileSize,
-    { threshold: 0 }
-  );
+  return pixelmatch(PNG.sync.read(png1).data, PNG.sync.read(png2).data, null, tileSize, tileSize, {
+    threshold: 0,
+  });
 }
 
 beforeEach(() => {
@@ -152,9 +167,7 @@ test("mosaic(14, 9485, 5610) and 2 parent tiles", async () => {
       };
     }
 
-    throw new Error(
-      `query received unexpected values: ${JSON.stringify(values)}`
-    );
+    throw new Error(`query received unexpected values: ${JSON.stringify(values)}`);
   });
 
   const [tile, parentTile, parentParentTile] = await Promise.all([
@@ -211,9 +224,7 @@ test("mosaic256px(14, 9485, 5610)", async () => {
       };
     }
 
-    throw new Error(
-      `query received unexpected values: ${JSON.stringify(values)}`
-    );
+    throw new Error(`query received unexpected values: ${JSON.stringify(values)}`);
   });
 
   const tile = await requestMosaic256px(15, 18970, 11220);
@@ -243,9 +254,7 @@ test("mosaic(11, 1233, 637)", async () => {
       };
     }
 
-    throw new Error(
-      `query received unexpected values: ${JSON.stringify(values)}`
-    );
+    throw new Error(`query received unexpected values: ${JSON.stringify(values)}`);
   });
 
   const tile = await requestMosaic512px(11, 1233, 637);
@@ -256,24 +265,31 @@ test("mosaic(11, 1233, 637)", async () => {
   expect(compareTilesPixelmatch(expected, tile.image.buffer, 512)).toBe(0);
 });
 
-test("mosaic cache invalidation", async () => {
-  registerDbQueryHandler(
-    "get-images-added-since-last-invalidation",
-    (values) => {
-      expect(values.length).toBe(1);
-      expect(values[0]).toBeInstanceOf(Date);
-      return {
-        rows: [
-          {
-            uuid: "http://oin-hotosm.s3.amazonaws.com/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.tif",
-            uploaded_at: "2022-10-06T03:40:19.040Z",
-            geojson:
-              '{"type":"Polygon","coordinates":[[[36.835672447,56.043330146],[36.835672447,56.048091024],[36.847995133,56.048091024],[36.847995133,56.043330146],[36.835672447,56.043330146]]]}',
-          },
-        ],
-      };
-    }
-  );
+test("mosaic cache invalidation [add]", async () => {
+  registerDbQueryHandler("get-images-added-since-last-invalidation", (values) => {
+    expect(values.length).toBe(1);
+    expect(values[0]).toBeInstanceOf(Date);
+    return {
+      rows: [
+        {
+          uuid: "http://oin-hotosm.s3.amazonaws.com/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.tif",
+          uploaded_at: "2022-10-06T03:40:19.040Z",
+          geojson:
+            '{"type":"Polygon","coordinates":[[[36.835672447,56.043330146],[36.835672447,56.048091024],[36.847995133,56.048091024],[36.847995133,56.043330146],[36.835672447,56.043330146]]]}',
+        },
+      ],
+    };
+  });
+
+  registerDbQueryHandler("get-all-image-ids", () => {
+    return {
+      rows: [
+        {
+          uuid: "http://oin-hotosm.s3.amazonaws.com/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.tif",
+        },
+      ],
+    };
+  });
 
   const invalidatedCacheKeys = new Set();
   const cacheDeleteEventListener = (key) => {
@@ -301,9 +317,7 @@ test("mosaic cache invalidation", async () => {
 
   const infoAfter = JSON.parse(await cache.get("__info__.json"));
 
-  expect(new Date(Date.parse(infoAfter.last_updated)).toISOString()).toBe(
-    infoAfter.last_updated
-  );
+  expect(new Date(Date.parse(infoAfter.last_updated)).toISOString()).toBe(infoAfter.last_updated);
   expect(infoAfter.last_updated).toBe("2022-10-06T03:40:19.040Z");
   expect(Date.parse(infoBefore.last_updated)).toBeLessThanOrEqual(
     Date.parse(infoAfter.last_updated)
@@ -312,12 +326,81 @@ test("mosaic cache invalidation", async () => {
   expect(invalidatedCacheKeys.has("__mosaic__/0/0/0.png")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/0/0/0.jpg")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/11/1233/637.png")).toBe(true);
-  expect(invalidatedCacheKeys.has("__mosaic256px__/12/2466/1274.png")).toBe(
-    true
-  );
+  expect(invalidatedCacheKeys.has("__mosaic256px__/12/2466/1274.png")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/11/1233/637.jpg")).toBe(true);
-  expect(invalidatedCacheKeys.has("__mosaic256px__/12/2466/1274.jpg")).toBe(
-    true
-  );
+  expect(invalidatedCacheKeys.has("__mosaic256px__/12/2466/1274.jpg")).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic__/11/1233/638.png")).toBe(false);
+});
+
+test("mosaic cache invalidation [delete]", async () => {
+  registerDbQueryHandler("get-image-uuid-in-zxy-tile", (values) => {
+    expect(values.length).toBe(3);
+    const [z, x, y] = values;
+    if (z === 11 && x === 1233 && y === 637) {
+      return {
+        rows: [
+          {
+            uuid: "http://oin-hotosm.s3.amazonaws.com/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.tif",
+            geojson:
+              '{"type":"Polygon","coordinates":[[[36.835672447,56.043330146],[36.835672447,56.048091024],[36.847995133,56.048091024],[36.847995133,56.043330146],[36.835672447,56.043330146]]]}',
+          },
+        ],
+      };
+    }
+
+    throw new Error(`query received unexpected values: ${JSON.stringify(values)}`);
+  });
+
+  await requestMosaic512px(11, 1233, 637);
+
+  registerDbQueryHandler("get-images-added-since-last-invalidation", (values) => {
+    expect(values.length).toBe(1);
+    expect(values[0]).toBeInstanceOf(Date);
+    return {
+      rows: [],
+    };
+  });
+
+  registerDbQueryHandler("get-all-image-ids", () => {
+    return {
+      rows: [],
+    };
+  });
+
+  const invalidatedCacheKeys = new Set();
+  const cacheDeleteEventListener = (key) => {
+    invalidatedCacheKeys.add(key);
+  };
+
+  const infoBefore = { last_updated: "2022-10-05T03:40:19.040Z" };
+  await cache.put(Buffer.from(JSON.stringify(infoBefore)), "__info__.json");
+
+  await Promise.all([
+    cache.put(
+      null,
+      "__metadata__/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.json"
+    ),
+    cache.put(null, "__mosaic__/11/1233/637.png"),
+    cache.put(null, "__mosaic256px__/12/2466/1274.png"),
+    cache.put(null, "__mosaic__/11/1233/637.jpg"),
+    cache.put(null, "__mosaic256px__/12/2466/1274.jpg"),
+    cache.put(null, "__mosaic__/11/1233/637.jpg"),
+    cache.put(null, "__mosaic256px__/12/2466/1274.jpg"),
+    cache.put(null, "__mosaic__/11/1233/638.png"),
+  ]);
+
+  cache.on("delete", cacheDeleteEventListener);
+  await invalidateMosaicCache();
+  cache.removeListener("delete", cacheDeleteEventListener);
+
+  expect(
+    invalidatedCacheKeys.has(
+      "__metadata__/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.json"
+    )
+  ).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic__/11/1233/637.png")).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic256px__/12/2466/1274.png")).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic__/11/1233/637.jpg")).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic256px__/12/2466/1274.jpg")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/11/1233/638.png")).toBe(false);
 });
