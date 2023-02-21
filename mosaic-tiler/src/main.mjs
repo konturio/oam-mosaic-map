@@ -7,6 +7,7 @@ import morgan from "morgan";
 import cors from "cors";
 import ejs from "ejs";
 import zlib from "zlib";
+import pLimit from "p-limit";
 import { cacheInit, cachePurgeMosaic } from "./cache.mjs";
 import { tileRequestQueue, metadataRequestQueue } from "./titiler_fetcher.mjs";
 import { requestMosaic512px, requestMosaic256px } from "./mosaic.mjs";
@@ -299,9 +300,15 @@ function runQueuesStatusLogger() {
 }
 
 function runMosaicCacheInvalidationJob() {
+  const limit = pLimit(1);
   setInterval(() => {
-    invalidateMosaicCache().catch((err) => {
-      console.error(">error in invalidateMosaicCache", err);
+    // every next task invalidaiton job should wait for complition of already running one
+    // otherwise there might be several invalidation jobs running concurrently and deleting
+    // the same stale tiles from cache.
+    limit(() => {
+      return invalidateMosaicCache().catch((err) => {
+        console.error(">error in invalidateMosaicCache", err);
+      });
     });
   }, 30000);
 }
