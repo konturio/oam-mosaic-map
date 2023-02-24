@@ -376,10 +376,6 @@ test("mosaic cache invalidation [delete]", async () => {
   await cache.put(Buffer.from(JSON.stringify(infoBefore)), "__info__.json");
 
   await Promise.all([
-    cache.put(
-      null,
-      "__metadata__/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.json"
-    ),
     cache.put(null, "__mosaic__/11/1233/637.png"),
     cache.put(null, "__mosaic256px__/12/2466/1274.png"),
     cache.put(null, "__mosaic__/11/1233/637.jpg"),
@@ -398,6 +394,8 @@ test("mosaic cache invalidation [delete]", async () => {
       "__metadata__/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.json"
     )
   ).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic__/0/0/0.png")).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic__/0/0/0.jpg")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/11/1233/637.png")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic256px__/12/2466/1274.png")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/11/1233/637.jpg")).toBe(true);

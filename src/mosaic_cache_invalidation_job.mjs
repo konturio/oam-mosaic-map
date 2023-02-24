@@ -1,3 +1,4 @@
+import { strict as assert } from "node:assert";
 import * as db from "./db.mjs";
 import {
   cacheGet,
@@ -9,6 +10,21 @@ import {
 } from "./cache.mjs";
 import { getGeotiffMetadata } from "./metadata.mjs";
 import { getTileCover } from "./tile_cover.mjs";
+
+function geojsonGeometryFromBounds(topLeft, bottomRight) {
+  return {
+    type: "Polygon",
+    coordinates: [
+      [
+        [topLeft[0], topLeft[1]],
+        [bottomRight[0], topLeft[1]],
+        [bottomRight[0], bottomRight[1]],
+        [topLeft[0], bottomRight[1]],
+        [topLeft[0], topLeft[1]],
+      ],
+    ],
+  };
+}
 
 async function invalidateMosaicCache() {
   const cacheInfo = JSON.parse(await cacheGet("__info__.json"));
@@ -66,29 +82,27 @@ async function invalidateMosaicCache() {
     // all cached mosaic tiles that contain this image need to be invalidated
     // because the image itself was deleted.
     if (!image) {
-      // rather then calculating tile coverage it is possible to go through
-      // all cached tiles for a specific image and mark all mosaic tiles
-      // with the same z, x, y as stale
-      for await (const singleImageTileCacheKey of singleImageTilesIterable(key)) {
-        const [z, x, y] = singleImageTileCacheKey
-          .replace(key + "/", "")
-          .replace(".png", "") // there are no .jpg tiles for tiles of a single image
-          .split("/")
-          .map((x) => Number(x));
-
-        const staleCacheKeys = [];
-        staleCacheKeys.push(`__mosaic__/${z}/${x}/${y}.png`);
-        staleCacheKeys.push(`__mosaic__/${z}/${x}/${y}.jpg`);
-        staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.png`);
-        staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2}.png`);
-        staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2 + 1}.png`);
-        staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2 + 1}.png`);
-        staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.jpg`);
-        staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2}.jpg`);
-        staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2 + 1}.jpg`);
-        staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2 + 1}.jpg`);
-        for (const key of staleCacheKeys) {
-          await cacheDelete(key);
+      const metadataBuffer = await cacheGet(metadataCacheKey);
+      assert.ok(metadataBuffer);
+      const metadata = JSON.parse(metadataBuffer.toString());
+      const { bounds, maxzoom } = metadata;
+      const geojson = geojsonGeometryFromBounds(bounds.slice(0, 2), bounds.slice(2));
+      for (let zoom = 0; zoom <= maxzoom; ++zoom) {
+        for (const [x, y, z] of getTileCover(geojson, zoom)) {
+          const staleCacheKeys = [];
+          staleCacheKeys.push(`__mosaic__/${z}/${x}/${y}.png`);
+          staleCacheKeys.push(`__mosaic__/${z}/${x}/${y}.jpg`);
+          staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.png`);
+          staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2}.png`);
+          staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2 + 1}.png`);
+          staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2 + 1}.png`);
+          staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.jpg`);
+          staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2}.jpg`);
+          staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2 + 1}.jpg`);
+          staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2 + 1}.jpg`);
+          for (const key of staleCacheKeys) {
+            await cacheDelete(key);
+          }
         }
       }
 
