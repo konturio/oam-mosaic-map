@@ -376,6 +376,8 @@ test("mosaic cache invalidation [delete]", async () => {
   await cache.put(Buffer.from(JSON.stringify(infoBefore)), "__info__.json");
 
   await Promise.all([
+    cache.put(null, "__mosaic__/0/0/0.png"),
+    cache.put(null, "__mosaic__/0/0/0.jpg"),
     cache.put(null, "__mosaic__/11/1233/637.png"),
     cache.put(null, "__mosaic256px__/12/2466/1274.png"),
     cache.put(null, "__mosaic__/11/1233/637.jpg"),
