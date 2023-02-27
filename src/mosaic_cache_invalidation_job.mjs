@@ -26,24 +26,28 @@ function geojsonGeometryFromBounds(topLeft, bottomRight) {
   };
 }
 
-function getStaleCacheKeysForImage(geojson, maxzoom) {
-  const staleCacheKeys = new Set();
+async function invalidateImage(geojson, maxzoom, presentMosaicCacheKeys) {
   for (let zoom = 0; zoom <= maxzoom; ++zoom) {
     for (const [x, y, z] of getTileCover(geojson, zoom)) {
-      staleCacheKeys.add(`__mosaic__/${z}/${x}/${y}.png`);
-      staleCacheKeys.add(`__mosaic__/${z}/${x}/${y}.jpg`);
-      staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.png`);
-      staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2}.png`);
-      staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2 + 1}.png`);
-      staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2 + 1}.png`);
-      staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.jpg`);
-      staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2}.jpg`);
-      staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2 + 1}.jpg`);
-      staleCacheKeys.add(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2 + 1}.jpg`);
+      const staleCacheKeys = [];
+      staleCacheKeys.push(`__mosaic__/${z}/${x}/${y}.png`);
+      staleCacheKeys.push(`__mosaic__/${z}/${x}/${y}.jpg`);
+      staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.png`);
+      staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2}.png`);
+      staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2 + 1}.png`);
+      staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2 + 1}.png`);
+      staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.jpg`);
+      staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2}.jpg`);
+      staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2 + 1}.jpg`);
+      staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2 + 1}.jpg`);
+
+      for (const cacheKey of staleCacheKeys) {
+        if (presentMosaicCacheKeys.has(cacheKey)) {
+          await cacheDelete(cacheKey);
+        }
+      }
     }
   }
-
-  return staleCacheKeys;
 }
 
 async function invalidateMosaicCache() {
@@ -107,12 +111,7 @@ async function invalidateMosaicCache() {
       const metadata = JSON.parse(metadataBuffer.toString());
       const { bounds, maxzoom } = metadata;
       const geojson = geojsonGeometryFromBounds(bounds.slice(0, 2), bounds.slice(2));
-      for (const staleCacheKey of getStaleCacheKeysForImage(geojson, maxzoom)) {
-        if (presentMosaicCacheKeys.has(staleCacheKey)) {
-          await cacheDelete(staleCacheKey);
-        }
-      }
-
+      await invalidateImage(geojson, maxzoom, presentMosaicCacheKeys);
       await cacheDelete(metadataCacheKey);
     }
   }
@@ -127,11 +126,7 @@ async function invalidateMosaicCache() {
         latestUploadedAt = row.uploaded_at;
       }
       const { maxzoom } = await getGeotiffMetadata(url);
-      for (const staleCacheKey of getStaleCacheKeysForImage(geojson, maxzoom)) {
-        if (presentMosaicCacheKeys.has(staleCacheKey)) {
-          await cacheDelete(staleCacheKey);
-        }
-      }
+      await invalidateImage(geojson, maxzoom, presentMosaicCacheKeys);
     }
   }
 
