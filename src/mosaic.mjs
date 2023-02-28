@@ -140,7 +140,7 @@ async function mosaic(z, x, y) {
       text: `with oam_meta as (
           select
               properties->>'gsd' as resolution_in_meters, 
-              properties->>'uploaded_at' as uploaded_at, 
+              (properties->>'uploaded_at')::timestamptz as uploaded_at,
               properties->>'uuid' as uuid, 
               geom
           from public.layers_features
