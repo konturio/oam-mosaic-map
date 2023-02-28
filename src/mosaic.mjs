@@ -77,9 +77,7 @@ function requestMosaic512px(z, x, y) {
     return activeMosaicRequests.get(key);
   }
 
-  const request = mosaic(z, x, y).finally(() =>
-    activeMosaicRequests.delete(key)
-  );
+  const request = cachedMosaic(z, x, y).finally(() => activeMosaicRequests.delete(key));
   activeMosaicRequests.set(key, request);
 
   return request;
@@ -107,23 +105,12 @@ async function requestMosaic256px(z, x, y) {
 
   tile256.image.transformInJpegIfFullyOpaque();
 
-  await cachePutTile(
-    tile256.image.buffer,
-    "__mosaic256px__",
-    z,
-    x,
-    y,
-    tile256.image.extension
-  );
+  await cachePutTile(tile256.image.buffer, "__mosaic256px__", z, x, y, tile256.image.extension);
 
   return tile256;
 }
 
-// request tile for mosaic
-async function mosaic(z, x, y) {
-  let dbClient;
-  let rows;
-
+async function cachedMosaic(z, x, y) {
   let tileBuffer = await cacheGetTile("__mosaic__", z, x, y, "png");
   if (tileBuffer) {
     return new Tile(new TileImage(tileBuffer, "png"), z, x, y);
@@ -133,6 +120,17 @@ async function mosaic(z, x, y) {
   if (tileBuffer) {
     return new Tile(new TileImage(tileBuffer, "jpg"), z, x, y);
   }
+
+  const mosaicTile = await mosaic(z, x, y);
+  await cachePutTile(mosaicTile.image.buffer, "__mosaic__", z, x, y, mosaicTile.image.extension);
+
+  return mosaicTile;
+}
+
+// request tile for mosaic
+async function mosaic(z, x, y) {
+  let dbClient;
+  let rows;
 
   try {
     dbClient = await db.getClient();
@@ -216,7 +214,7 @@ async function mosaic(z, x, y) {
 
   const tiles = await Promise.all(tilePromises);
 
-  tileBuffer = await sharp({
+  const tileBuffer = await sharp({
     create: {
       width: TILE_SIZE,
       height: TILE_SIZE,
@@ -236,14 +234,6 @@ async function mosaic(z, x, y) {
 
   const tile = new Tile(new TileImage(tileBuffer, "png"), z, x, y);
   await tile.image.transformInJpegIfFullyOpaque();
-  await cachePutTile(
-    tile.image.buffer,
-    "__mosaic__",
-    z,
-    x,
-    y,
-    tile.image.extension
-  );
 
   return tile;
 }
