@@ -75,57 +75,31 @@ mosaicTilesRouter.get(
   })
 );
 
-mosaicTilesRouter.get(
-  "/:z(\\d+)/:x(\\d+)/:y(\\d+).png",
-  wrapAsyncCallback(async (req, res) => {
-    res.set("Cache-Control", "public, max-age=300");
+async function mosaic256pxRoute(req, res) {
+  res.set("Cache-Control", "public, max-age=300");
 
-    const z = Number(req.params.z);
-    const x = Number(req.params.x);
-    const y = Number(req.params.y);
-    if (isInvalidZxy(z, x, y)) {
-      return res.status(404).send("Out of bounds");
-    }
+  const z = Number(req.params.z);
+  const x = Number(req.params.x);
+  const y = Number(req.params.y);
+  if (isInvalidZxy(z, x, y)) {
+    return res.status(404).send("Out of bounds");
+  }
 
-    if (z == 0) {
-      return res.status(404).end();
-    }
+  if (z == 0) {
+    return res.status(404).end();
+  }
 
-    const tile = await requestCachedMosaic256px(z, x, y);
-    if (tile.image.empty()) {
-      return res.status(204).send();
-    }
+  const tile = await requestCachedMosaic256px(z, x, y);
+  if (tile.image.empty()) {
+    return res.status(204).send();
+  }
 
-    res.type(tile.image.extension);
-    res.send(tile.image.buffer);
-  })
-);
+  res.type(tile.image.extension);
+  res.send(tile.image.buffer);
+}
 
-mosaicTilesRouter.get(
-  "/:z(\\d+)/:x(\\d+)/:y(\\d+)@1x.png",
-  wrapAsyncCallback(async (req, res) => {
-    res.set("Cache-Control", "public, max-age=300");
-
-    const z = Number(req.params.z);
-    const x = Number(req.params.x);
-    const y = Number(req.params.y);
-    if (isInvalidZxy(z, x, y)) {
-      return res.status(404).send("Out of bounds");
-    }
-
-    if (z == 0) {
-      return res.status(404).end();
-    }
-
-    const tile = await requestCachedMosaic256px(z, x, y);
-    if (tile.image.empty()) {
-      return res.status(204).send();
-    }
-
-    res.type(tile.image.extension);
-    res.send(tile.image.buffer);
-  })
-);
+mosaicTilesRouter.get("/:z(\\d+)/:x(\\d+)/:y(\\d+).png", wrapAsyncCallback(mosaic256pxRoute));
+mosaicTilesRouter.get("/:z(\\d+)/:x(\\d+)/:y(\\d+)@1x.png", wrapAsyncCallback(mosaic256pxRoute));
 
 mosaicTilesRouter.get(
   "/:z(\\d+)/:x(\\d+)/:y(\\d+)@2x.png",
