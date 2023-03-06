@@ -120,13 +120,14 @@ async function cachedMosaic512px(z, x, y) {
   return mosaicTile;
 }
 
-async function mosaic256px(z, x, y) {
+async function mosaic256px(z, x, y, filters = {}) {
+  const request512pxFn = Object.keys(filters).length > 0 ? mosaic512px : requestCachedMosaic512px;
   let tile256;
   if (z % 2 === 0) {
-    const tile512 = await requestCachedMosaic512px(z, x, y);
+    const tile512 = await request512pxFn(z, x, y, filters);
     tile256 = await tile512.scale(0.5);
   } else {
-    const parent512 = await requestCachedMosaic512px(z - 1, x >> 1, y >> 1);
+    const parent512 = await request512pxFn(z - 1, x >> 1, y >> 1, filters);
     tile256 = await parent512.extractChild(z, x, y);
   }
 
