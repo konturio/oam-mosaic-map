@@ -10,7 +10,7 @@ import zlib from "zlib";
 import pLimit from "p-limit";
 import { cacheInit, cachePurgeMosaic } from "./cache.mjs";
 import { tileRequestQueue, metadataRequestQueue } from "./titiler_fetcher.mjs";
-import { requestMosaic512px, requestMosaic256px } from "./mosaic.mjs";
+import { requestCachedMosaic512px, requestCachedMosaic256px } from "./mosaic.mjs";
 import { invalidateMosaicCache } from "./mosaic_cache_invalidation_job.mjs";
 
 dotenv.config({ path: ".env" });
@@ -90,7 +90,7 @@ mosaicTilesRouter.get(
       return res.status(404).end();
     }
 
-    const tile = await requestMosaic256px(z, x, y);
+    const tile = await requestCachedMosaic256px(z, x, y);
     if (tile.image.empty()) {
       return res.status(204).send();
     }
@@ -116,7 +116,7 @@ mosaicTilesRouter.get(
       return res.status(404).end();
     }
 
-    const tile = await requestMosaic256px(z, x, y);
+    const tile = await requestCachedMosaic256px(z, x, y);
     if (tile.image.empty()) {
       return res.status(204).send();
     }
@@ -138,7 +138,7 @@ mosaicTilesRouter.get(
       return res.status(404).send("Out of bounds");
     }
 
-    const tile = await requestMosaic512px(z, x, y);
+    const tile = await requestCachedMosaic512px(z, x, y);
     if (tile.image.empty()) {
       return res.status(204).send();
     }

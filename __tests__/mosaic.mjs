@@ -126,7 +126,7 @@ jest.unstable_mockModule("../src/cache.mjs", () => {
 
 process.env.TITILER_BASE_URL = "https://test-apps02.konturlabs.com/titiler/";
 
-const { requestMosaic256px, requestMosaic512px } = await import("../src/mosaic.mjs");
+const { requestCachedMosaic256px, requestCachedMosaic512px } = await import("../src/mosaic.mjs");
 const { getGeotiffMetadata } = await import("../src/metadata.mjs");
 const { invalidateMosaicCache } = await import("../src/mosaic_cache_invalidation_job.mjs");
 const { tileRequestQueue, metadataRequestQueue } = await import("../src/titiler_fetcher.mjs");
@@ -171,9 +171,9 @@ test("mosaic(14, 9485, 5610) and 2 parent tiles", async () => {
   });
 
   const [tile, parentTile, parentParentTile] = await Promise.all([
-    requestMosaic512px(14, 9485, 5610),
-    requestMosaic512px(13, 4742, 2805),
-    requestMosaic512px(12, 2371, 1402),
+    requestCachedMosaic512px(14, 9485, 5610),
+    requestCachedMosaic512px(13, 4742, 2805),
+    requestCachedMosaic512px(12, 2371, 1402),
   ]);
 
   expect(
@@ -227,7 +227,7 @@ test("mosaic256px(14, 9485, 5610)", async () => {
     throw new Error(`query received unexpected values: ${JSON.stringify(values)}`);
   });
 
-  const tile = await requestMosaic256px(15, 18970, 11220);
+  const tile = await requestCachedMosaic256px(15, 18970, 11220);
 
   expect(
     compareTilesPixelmatch(
@@ -257,7 +257,7 @@ test("mosaic(11, 1233, 637)", async () => {
     throw new Error(`query received unexpected values: ${JSON.stringify(values)}`);
   });
 
-  const tile = await requestMosaic512px(11, 1233, 637);
+  const tile = await requestCachedMosaic512px(11, 1233, 637);
   expect(tileRequestQueue.size).toBe(0);
   expect(metadataRequestQueue.size).toBe(0);
 
@@ -351,7 +351,7 @@ test("mosaic cache invalidation [delete]", async () => {
     throw new Error(`query received unexpected values: ${JSON.stringify(values)}`);
   });
 
-  await requestMosaic512px(11, 1233, 637);
+  await requestCachedMosaic512px(11, 1233, 637);
 
   registerDbQueryHandler("get-images-added-since-last-invalidation", (values) => {
     expect(values.length).toBe(1);
