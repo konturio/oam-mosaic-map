@@ -76,7 +76,7 @@ function requestMosaic512px(z, x, y) {
     return activeMosaicRequests.get(key);
   }
 
-  const request = cachedMosaic(z, x, y).finally(() => activeMosaicRequests.delete(key));
+  const request = cachedMosaic512px(z, x, y).finally(() => activeMosaicRequests.delete(key));
   activeMosaicRequests.set(key, request);
 
   return request;
@@ -109,7 +109,7 @@ async function requestMosaic256px(z, x, y) {
   return tile256;
 }
 
-async function cachedMosaic(z, x, y) {
+async function cachedMosaic512px(z, x, y) {
   let tileBuffer = await cacheGetTile("__mosaic__", z, x, y, "png");
   if (tileBuffer) {
     return new Tile(new TileImage(tileBuffer, "png"), z, x, y);
@@ -120,14 +120,14 @@ async function cachedMosaic(z, x, y) {
     return new Tile(new TileImage(tileBuffer, "jpg"), z, x, y);
   }
 
-  const mosaicTile = await mosaic(z, x, y);
+  const mosaicTile = await mosaic512px(z, x, y);
   await cachePutTile(mosaicTile.image.buffer, "__mosaic__", z, x, y, mosaicTile.image.extension);
 
   return mosaicTile;
 }
 
 // request tile for mosaic
-async function mosaic(z, x, y, filters = {}) {
+async function mosaic512px(z, x, y, filters = {}) {
   let dbClient;
   let rows;
   let sqlQueryParams = [z, x, y];
