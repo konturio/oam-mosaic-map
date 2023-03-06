@@ -7,7 +7,6 @@ import { getGeotiffMetadata } from "./metadata.mjs";
 import { getTileCover } from "./tile_cover.mjs";
 import { keyFromS3Url } from "./key_from_s3_url.mjs";
 
-const TILE_SIZE = 512;
 const OAM_LAYER_ID = process.env.OAM_LAYER_ID || "openaerialmap";
 
 function cacheGetTile(key, z, x, y, extension) {
@@ -234,8 +233,8 @@ async function mosaic512px(z, x, y, filters = {}) {
 
   const tileBuffer = await sharp({
     create: {
-      width: TILE_SIZE,
-      height: TILE_SIZE,
+      width: 512,
+      height: 512,
       channels: 4,
       background: { r: 0, g: 0, b: 0, alpha: 0 },
     },
