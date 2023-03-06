@@ -74,8 +74,8 @@ function requestCachedMosaic256px(z, x, y) {
 }
 
 const activeMosaicRequests = new Map();
-// wrapper that deduplicates mosiac function calls
 function requestCachedMosaic512px(z, x, y) {
+  // wrapper that deduplicates mosaic function calls
   const key = JSON.stringify([z, x, y]);
   if (activeMosaicRequests.has(key)) {
     return activeMosaicRequests.get(key);
@@ -137,7 +137,6 @@ async function mosaic256px(z, x, y, filters = {}) {
   return tile256;
 }
 
-// request tile for mosaic
 async function mosaic512px(z, x, y, filters = {}) {
   const request512pxFn = Object.keys(filters).length > 0 ? mosaic512px : requestCachedMosaic512px;
 
