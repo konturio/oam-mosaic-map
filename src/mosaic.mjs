@@ -69,6 +69,10 @@ async function source(key, z, x, y, meta, geojson) {
   return new Tile(new TileImage(tileBuffer, "png"), z, x, y);
 }
 
+function requestMosaic256px(z, x, y) {
+  return cachedMosaic256px(z, x, y);
+}
+
 const activeMosaicRequests = new Map();
 // wrapper that deduplicates mosiac function calls
 function requestMosaic512px(z, x, y) {
@@ -83,31 +87,21 @@ function requestMosaic512px(z, x, y) {
   return request;
 }
 
-async function requestMosaic256px(z, x, y) {
-  let tileBuffer = await cacheGetTile("__mosaic256px__", z, x, y, "png");
+async function cachedMosaic256px(z, x, y) {
+  let tileBuffer = await cacheGetTile("__mosaic256__", z, x, y, "png");
   if (tileBuffer) {
-    return new Tile(new TileImage(tileBuffer, "png", 256), z, x, y);
+    return new Tile(new TileImage(tileBuffer, "png"), z, x, y);
   }
 
-  tileBuffer = await cacheGetTile("__mosaic256px__", z, x, y, "jpg");
+  tileBuffer = await cacheGetTile("__mosaic256__", z, x, y, "jpg");
   if (tileBuffer) {
-    return new Tile(new TileImage(tileBuffer, "jpg", 256), z, x, y);
+    return new Tile(new TileImage(tileBuffer, "jpg"), z, x, y);
   }
 
-  let tile256;
-  if (z % 2 === 0) {
-    const tile512 = await requestMosaic512px(z, x, y);
-    tile256 = await tile512.scale(0.5);
-  } else {
-    const parent512 = await requestMosaic512px(z - 1, x >> 1, y >> 1);
-    tile256 = await parent512.extractChild(z, x, y);
-  }
+  const mosaicTile = await mosaic256px(z, x, y);
+  await cachePutTile(mosaicTile.image.buffer, "__mosaic256__", z, x, y, mosaicTile.image.extension);
 
-  tile256.image.transformInJpegIfFullyOpaque();
-
-  await cachePutTile(tile256.image.buffer, "__mosaic256px__", z, x, y, tile256.image.extension);
-
-  return tile256;
+  return mosaicTile;
 }
 
 async function cachedMosaic512px(z, x, y) {
@@ -125,6 +119,21 @@ async function cachedMosaic512px(z, x, y) {
   await cachePutTile(mosaicTile.image.buffer, "__mosaic__", z, x, y, mosaicTile.image.extension);
 
   return mosaicTile;
+}
+
+async function mosaic256px(z, x, y) {
+  let tile256;
+  if (z % 2 === 0) {
+    const tile512 = await requestMosaic512px(z, x, y);
+    tile256 = await tile512.scale(0.5);
+  } else {
+    const parent512 = await requestMosaic512px(z - 1, x >> 1, y >> 1);
+    tile256 = await parent512.extractChild(z, x, y);
+  }
+
+  tile256.image.transformInJpegIfFullyOpaque();
+
+  return tile256;
 }
 
 // request tile for mosaic
