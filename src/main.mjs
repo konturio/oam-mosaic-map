@@ -10,7 +10,7 @@ import zlib from "zlib";
 import pLimit from "p-limit";
 import { cacheInit, cachePurgeMosaic } from "./cache.mjs";
 import { tileRequestQueue, metadataRequestQueue } from "./titiler_fetcher.mjs";
-import { requestCachedMosaic512px, requestCachedMosaic256px } from "./mosaic.mjs";
+import { mosaic256px, requestCachedMosaic512px, requestCachedMosaic256px } from "./mosaic.mjs";
 import { invalidateMosaicCache } from "./mosaic_cache_invalidation_job.mjs";
 
 dotenv.config({ path: ".env" });
@@ -89,7 +89,23 @@ async function mosaic256pxRoute(req, res) {
     return res.status(404).end();
   }
 
-  const tile = await requestCachedMosaic256px(z, x, y);
+  const filters = {};
+  if (req.query.start) {
+    // FIXME: Verify that query param is valid date string in ISO format
+    filters.startDatetime = req.query.start;
+  }
+  if (req.query.end) {
+    // FIXME: Verify that query param is valid date string in ISO format
+    filters.endDatetime = req.query.end;
+  }
+
+  let tile;
+  if (Object.keys(filters).length > 0) {
+    tile = await mosaic256px(z, x, y, filters);
+  } else {
+    tile = await requestCachedMosaic256px(z, x, y);
+  }
+
   if (tile.image.empty()) {
     return res.status(204).send();
   }

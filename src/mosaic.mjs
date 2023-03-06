@@ -259,4 +259,4 @@ async function mosaic512px(z, x, y, filters = {}) {
   return tile;
 }
 
-export { requestCachedMosaic512px, requestCachedMosaic256px };
+export { mosaic256px, requestCachedMosaic512px, requestCachedMosaic256px };
