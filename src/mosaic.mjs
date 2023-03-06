@@ -139,6 +139,8 @@ async function mosaic256px(z, x, y, filters = {}) {
 
 // request tile for mosaic
 async function mosaic512px(z, x, y, filters = {}) {
+  const request512pxFn = Object.keys(filters).length > 0 ? mosaic512px : requestCachedMosaic512px;
+
   let dbClient;
   let rows;
   let sqlQueryParams = [z, x, y];
@@ -210,10 +212,10 @@ async function mosaic512px(z, x, y, filters = {}) {
     tilePromises.push(
       constructParentTileFromChildren(
         await Promise.all([
-          requestCachedMosaic512px(z + 1, x * 2, y * 2),
-          requestCachedMosaic512px(z + 1, x * 2 + 1, y * 2),
-          requestCachedMosaic512px(z + 1, x * 2, y * 2 + 1),
-          requestCachedMosaic512px(z + 1, x * 2 + 1, y * 2 + 1),
+          request512pxFn(z + 1, x * 2, y * 2, filters),
+          request512pxFn(z + 1, x * 2 + 1, y * 2, filters),
+          request512pxFn(z + 1, x * 2, y * 2 + 1, filters),
+          request512pxFn(z + 1, x * 2 + 1, y * 2 + 1, filters),
         ]),
         z,
         x,
