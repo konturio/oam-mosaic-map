@@ -69,13 +69,13 @@ async function source(key, z, x, y, meta, geojson) {
   return new Tile(new TileImage(tileBuffer, "png"), z, x, y);
 }
 
-function requestMosaic256px(z, x, y) {
+function requestCachedMosaic256px(z, x, y) {
   return cachedMosaic256px(z, x, y);
 }
 
 const activeMosaicRequests = new Map();
 // wrapper that deduplicates mosiac function calls
-function requestMosaic512px(z, x, y) {
+function requestCachedMosaic512px(z, x, y) {
   const key = JSON.stringify([z, x, y]);
   if (activeMosaicRequests.has(key)) {
     return activeMosaicRequests.get(key);
@@ -124,10 +124,10 @@ async function cachedMosaic512px(z, x, y) {
 async function mosaic256px(z, x, y) {
   let tile256;
   if (z % 2 === 0) {
-    const tile512 = await requestMosaic512px(z, x, y);
+    const tile512 = await requestCachedMosaic512px(z, x, y);
     tile256 = await tile512.scale(0.5);
   } else {
-    const parent512 = await requestMosaic512px(z - 1, x >> 1, y >> 1);
+    const parent512 = await requestCachedMosaic512px(z - 1, x >> 1, y >> 1);
     tile256 = await parent512.extractChild(z, x, y);
   }
 
@@ -209,10 +209,10 @@ async function mosaic512px(z, x, y, filters = {}) {
     tilePromises.push(
       constructParentTileFromChildren(
         await Promise.all([
-          requestMosaic512px(z + 1, x * 2, y * 2),
-          requestMosaic512px(z + 1, x * 2 + 1, y * 2),
-          requestMosaic512px(z + 1, x * 2, y * 2 + 1),
-          requestMosaic512px(z + 1, x * 2 + 1, y * 2 + 1),
+          requestCachedMosaic512px(z + 1, x * 2, y * 2),
+          requestCachedMosaic512px(z + 1, x * 2 + 1, y * 2),
+          requestCachedMosaic512px(z + 1, x * 2, y * 2 + 1),
+          requestCachedMosaic512px(z + 1, x * 2 + 1, y * 2 + 1),
         ]),
         z,
         x,
@@ -258,4 +258,4 @@ async function mosaic512px(z, x, y, filters = {}) {
   return tile;
 }
 
-export { requestMosaic512px, requestMosaic256px };
+export { requestCachedMosaic512px, requestCachedMosaic256px };
