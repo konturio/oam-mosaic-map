@@ -185,12 +185,8 @@ async function mosaic512px(z, x, y, filters = {}) {
 
   const metadataByUuid = {};
   await Promise.all(
-    rows.map((row) => {
-      const f = async () => {
-        metadataByUuid[row.uuid] = await getGeotiffMetadata(row.uuid);
-      };
-
-      return f();
+    rows.map(async (row) => {
+      metadataByUuid[row.uuid] = await getGeotiffMetadata(row.uuid);
     })
   );
 
