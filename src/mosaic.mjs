@@ -128,9 +128,20 @@ async function cachedMosaic(z, x, y) {
 }
 
 // request tile for mosaic
-async function mosaic(z, x, y) {
+async function mosaic(z, x, y, filters = {}) {
   let dbClient;
   let rows;
+  let sqlQueryParams = [z, x, y];
+  let sqlWhereClause = "ST_TileEnvelope($1, $2, $3) && ST_Transform(geom, 3857)";
+  let nextParamIndex = 4;
+  if (filters.startDatetime) {
+    sqlWhereClause += `and (uploaded_at >= $${nextParamIndex++}::timestamptz)`;
+    sqlQueryParams.push(filters.startDatetime);
+  }
+  if (filters.endDatetime) {
+    sqlWhereClause += `and (uploaded_at <= $${nextParamIndex++}::timestamptz)`;
+    sqlQueryParams.push(filters.endDatetime);
+  }
 
   try {
     dbClient = await db.getClient();
@@ -147,9 +158,9 @@ async function mosaic(z, x, y) {
         )
         select uuid, ST_AsGeoJSON(ST_Envelope(geom)) geojson
         from oam_meta
-        where ST_TileEnvelope($1, $2, $3) && ST_Transform(geom, 3857)
+        where ${sqlWhereClause}
         order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`,
-      values: [z, x, y],
+      values: sqlQueryParams,
     });
     rows = dbResponse.rows;
   } catch (err) {
