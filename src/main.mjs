@@ -17,6 +17,7 @@ dotenv.config({ path: ".env" });
 
 const PORT = process.env.PORT;
 const BASE_URL = process.env.BASE_URL;
+const OAM_LAYER_ID = process.env.OAM_LAYER_ID || "openaerialmap";
 
 const gzip = promisify(zlib.gzip);
 
@@ -192,7 +193,7 @@ app.get(
       name: "mvt-outlines",
       text: `with oam_meta as (
          select geom from public.layers_features
-         where layer_id = (select id from public.layers where public_id = 'openaerialmap')
+         where layer_id = (select id from public.layers where public_id = '${OAM_LAYER_ID}')
        ),
        mvtgeom as (
          select
@@ -242,7 +243,7 @@ app.get(
       name: "mvt-clusters",
       text: `with invisible as (
           select ST_Transform(geom, 3857) as geom from public.layers_features
-          where layer_id = (select id from public.layers where public_id = 'openaerialmap')
+          where layer_id = (select id from public.layers where public_id = '${OAM_LAYER_ID}')
           and ST_Area(ST_Transform(geom, 3857)) < pow(10 * 20037508.342789244 / 512 * 2 / pow(2, $1), 2)
           and ST_Transform(geom, 3857) && ST_TileEnvelope($2, $3, $4)
       ), clusters as (
