@@ -8,6 +8,7 @@ import { getTileCover } from "./tile_cover.mjs";
 import { keyFromS3Url } from "./key_from_s3_url.mjs";
 
 const TILE_SIZE = 512;
+const OAM_LAYER_ID = process.env.OAM_LAYER_ID || "openaerialmap";
 
 function cacheGetTile(key, z, x, y, extension) {
   if (extension !== "png" && extension !== "jpg") {
@@ -144,7 +145,7 @@ async function mosaic(z, x, y) {
               properties->>'uuid' as uuid, 
               geom
           from public.layers_features
-          where layer_id = (select id from public.layers where public_id = 'openaerialmap')
+          where layer_id = (select id from public.layers where public_id = '${OAM_LAYER_ID}')
         )
         select uuid, ST_AsGeoJSON(ST_Envelope(geom)) geojson
         from oam_meta

@@ -50,6 +50,8 @@ async function invalidateImage(geojson, maxzoom, presentMosaicCacheKeys) {
   }
 }
 
+const OAM_LAYER_ID = process.env.OAM_LAYER_ID || "openaerialmap";
+
 async function invalidateMosaicCache() {
   const cacheInfo = JSON.parse(await cacheGet("__info__.json"));
   const lastUpdated = new Date(cacheInfo.last_updated);
@@ -70,7 +72,7 @@ async function invalidateMosaicCache() {
           properties->>'uploaded_at' uploaded_at,
           ST_AsGeoJSON(geom) geojson
         from public.layers_features
-        where layer_id = (select id from public.layers where public_id = 'openaerialmap')
+        where layer_id = (select id from public.layers where public_id = '${OAM_LAYER_ID}')
           and (properties->>'uploaded_at')::timestamp > $1`,
       values: [lastUpdated],
     });
@@ -80,7 +82,7 @@ async function invalidateMosaicCache() {
     dbResponse = await dbClient.query({
       name: "get-all-image-ids",
       text: `select properties->>'uuid' uuid from public.layers_features
-        where layer_id = (select id from public.layers where public_id = 'openaerialmap')`,
+        where layer_id = (select id from public.layers where public_id = '${OAM_LAYER_ID}')`,
     });
     allImages = dbResponse.rows;
   } catch (err) {
