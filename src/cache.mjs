@@ -8,6 +8,14 @@ const TILES_CACHE_DIR_PATH = process.env.TILES_CACHE_DIR_PATH;
 const TMP_DIR_PATH = TILES_CACHE_DIR_PATH + "/tmp";
 
 async function cacheInit() {
+  if (!fs.existsSync(TILES_CACHE_DIR_PATH + "/__mosaic__")) {
+    await fs.promises.mkdir(TILES_CACHE_DIR_PATH + "/__mosaic__", { recursive: true });
+  }
+
+  if (!fs.existsSync(TILES_CACHE_DIR_PATH + "/__mosaic256px__")) {
+    await fs.promises.mkdir(TILES_CACHE_DIR_PATH + "/__mosaic256px__", { recursive: true });
+  }
+
   if (!fs.existsSync(TMP_DIR_PATH)) {
     await fs.promises.mkdir(TMP_DIR_PATH, { recursive: true });
   }
