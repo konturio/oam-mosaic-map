@@ -5,7 +5,8 @@
   "main": "src/main.mjs",
   "scripts": {
     "start": "node src/main.mjs",
-    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage"
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "dev": "nodemon src/main.mjs"
   },
   "author": "",
   "license": "ISC",
@@ -26,6 +27,7 @@
   },
   "devDependencies": {
     "jest": "^29.4.3",
+    "nodemon": "^2.0.22",
     "pixelmatch": "^5.3.0",
     "pngjs": "^7.0.0"
   }

@@ -1,10 +1,8 @@
 function keyFromS3Url(url) {
-  return url
-    .replace("http://oin-hotosm.s3.amazonaws.com/", "")
-    .replace("https://oin-hotosm.s3.amazonaws.com/", "")
-    .replace("http://oin-hotosm-staging.s3.amazonaws.com/", "")
-    .replace("https://oin-hotosm-staging.s3.amazonaws.com/", "")
-    .replace(".tif", "");
+  const regex = /^https?:\/\/[^\/]+\.s3[^\/]*\.amazonaws\.com.*\/(.+)\.tif$/;
+
+  const match = url.match(regex);
+  return match ? match[1] : null;
 }
 
 export { keyFromS3Url };

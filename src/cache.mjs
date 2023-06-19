@@ -12,6 +12,14 @@ async function cacheInit() {
     await fs.promises.mkdir(TMP_DIR_PATH, { recursive: true });
   }
 
+  for (const dir of ["__mosaic__", "__mosaic256px__", "__metadata__"]) {
+    const dirPath = `${TILES_CACHE_DIR_PATH}/${dir}`;
+
+    if (!fs.existsSync(dirPath)) {
+      await fs.promises.mkdir(dirPath, { recursive: true });
+    }
+  }
+
   if ((await cacheGet("__info__.json")) === null) {
     const now = new Date();
     await cachePut(
