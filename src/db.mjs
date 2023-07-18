@@ -1,11 +1,14 @@
 import pg from "pg";
+import { logger } from "./logging.mjs";
 
 const pool = new pg.Pool({
   poolSize: parseInt(process.env.DB_POOL_SIZE) || 16,
-  ssl: process.env.DB_DISABLE_SSL === 'true' ? false :
-  {
-    rejectUnauthorized: false,
-  },
+  ssl:
+    process.env.DB_DISABLE_SSL === "true"
+      ? false
+      : {
+          rejectUnauthorized: false,
+        },
 });
 
 function getWaitingCount() {
@@ -17,7 +20,7 @@ async function query(text, params) {
   const res = await pool.query(text, params);
   const duration = Date.now() - start;
   if (duration > 5000) {
-    console.log("long db query", {
+    logger.warn("long db query", {
       text: text,
       params: params,
       duration,
@@ -33,10 +36,8 @@ async function getClient() {
   const release = client.release;
   // set a timeout of 5 seconds, after which we will log this client's last query
   const timeout = setTimeout(() => {
-    console.error("A client has been checked out for more than 5 seconds!");
-    console.error(
-      `The last executed query on this client was: ${client.lastQuery}`
-    );
+    logger.error("A client has been checked out for more than 5 seconds!");
+    logger.error(`The last executed query on this client was: ${client.lastQuery}`);
   }, 5000);
   // monkey patch the query method to keep track of the last query executed
   client.query = (...args) => {
