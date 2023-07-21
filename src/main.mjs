@@ -12,6 +12,7 @@ import { cacheInit, cachePurgeMosaic } from "./cache.mjs";
 import { tileRequestQueue, metadataRequestQueue } from "./titiler_fetcher.mjs";
 import { requestMosaic512px, requestMosaic256px } from "./mosaic.mjs";
 import { invalidateMosaicCache } from "./mosaic_cache_invalidation_job.mjs";
+import { logger } from "./logging.mjs";
 
 dotenv.config({ path: ".env" });
 
@@ -25,13 +26,11 @@ const app = express();
 
 app.set("etag", "weak");
 
-app.use(
-  morgan(":method :url :status :res[content-length] - :response-time ms")
-);
+app.use(morgan(":method :url :status :res[content-length] - :response-time ms"));
 app.use(cors());
 
 process.on("unhandledRejection", (error) => {
-  console.log(">>>unhandledRejection", error);
+  logger.error(">>>unhandledRejection", error);
   process.exit(1);
 });
 
@@ -40,21 +39,14 @@ function wrapAsyncCallback(callback) {
     try {
       callback(req, res, next).catch(next);
     } catch (err) {
-      console.log(">err", err);
+      logger.error(">err", err);
       next(err);
     }
   };
 }
 
 function isInvalidZxy(z, x, y) {
-  return (
-    z < 0 ||
-    z >= 32 ||
-    x < 0 ||
-    y < 0 ||
-    x >= Math.pow(2, z) ||
-    y >= Math.pow(2, z)
-  );
+  return z < 0 || z >= 32 || x < 0 || y < 0 || x >= Math.pow(2, z) || y >= Math.pow(2, z);
 }
 
 const mosaicTilesRouter = express.Router();
@@ -153,16 +145,12 @@ app.use("/tiles", mosaicTilesRouter);
 app.use("/oam/mosaic", mosaicTilesRouter);
 
 app.get("/mosaic_viewer", function (req, res, next) {
-  ejs.renderFile(
-    "./src/mosaic_viewer.ejs",
-    { baseUrl: process.env.BASE_URL },
-    (err, data) => {
-      if (err) {
-        next(err);
-      }
-      res.send(data);
+  ejs.renderFile("./src/mosaic_viewer.ejs", { baseUrl: process.env.BASE_URL }, (err, data) => {
+    if (err) {
+      next(err);
     }
-  );
+    res.send(data);
+  });
 });
 
 // separate connection for mvt outlines debug endpoint to make it respond when
@@ -285,7 +273,7 @@ app.post("/purge_mosaic_cache", async (req, res) => {
 });
 
 app.use(function (err, req, res, next) {
-  console.error(err.stack);
+  logger.error(err.stack);
   res.status(500);
   res.send("Internal server error");
   next;
@@ -293,10 +281,10 @@ app.use(function (err, req, res, next) {
 
 function runQueuesStatusLogger() {
   setInterval(() => {
-    console.log(">tile request queue size", tileRequestQueue.size);
-    console.log(">metadata request queue size", metadataRequestQueue.size);
-    console.log(">image processing", sharp.counters());
-    console.log(">db pool waiting count", db.getWaitingCount());
+    logger.debug(">tile request queue size", tileRequestQueue.size);
+    logger.debug(">metadata request queue size", metadataRequestQueue.size);
+    logger.debug(">image processing", sharp.counters());
+    logger.debug(">db pool waiting count", db.getWaitingCount());
   }, 1000);
 }
 
@@ -308,7 +296,7 @@ function runMosaicCacheInvalidationJob() {
     // the same stale tiles from cache.
     limit(() => {
       return invalidateMosaicCache().catch((err) => {
-        console.error(">error in invalidateMosaicCache", err);
+        logger.error(">error in invalidateMosaicCache", err);
       });
     });
   }, 30000);
@@ -322,10 +310,10 @@ async function main() {
     runMosaicCacheInvalidationJob();
 
     app.listen(PORT, () => {
-      console.log(`mosaic-tiler server is listening on port ${PORT}`);
+      logger.info(`mosaic-tiler server is listening on port ${PORT}`);
     });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     process.exit(1);
   }
 }

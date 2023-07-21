@@ -43,3 +43,25 @@ When the Mosaic Tiler receives a request for a tile, it handles it in the follow
 
 
 3. Create the resulting mosaic tile by stacking the tiles of all contained images on top of each other in a specific order (currently, the images are sorted based on their resolution, with the highest quality images appearing at the top).
+
+## Logging
+
+To setup logging level use LOG_LEVEL env variable:
+
+```sh
+LOG_LEVEL=error node src/main.mjs
+```
+
+Available log levels:
+
+```js
+const levels = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  http: 3,
+  verbose: 4,
+  debug: 5,
+  silly: 6
+};
+```
