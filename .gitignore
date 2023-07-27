@@ -7,3 +7,5 @@
 **/coverage
 npm/cli-*
 tiles/*
+.env*
+!.env.sample

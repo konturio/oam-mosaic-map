@@ -1,0 +1,21 @@
+version: "3"
+
+services:
+  mosaic:
+    build: .
+    env_file: .env
+    ports:
+      - 8001:8001
+    depends_on:
+      - titiler
+    volumes:
+      - ./tiles:/tiles
+    command: npm start
+
+  titiler:
+    image: developmentseed/titiler
+    environment:
+      - PORT=8000
+      - WORKERS_PER_CORE=1
+    ports:
+      - 8000:8000
