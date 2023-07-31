@@ -1,12 +1,18 @@
 import { cacheGet, cachePut } from "./cache.mjs";
 import { enqueueMetadataFetching } from "./titiler_fetcher.mjs";
 import { keyFromS3Url } from "./key_from_s3_url.mjs";
+import { logger } from "./logging.mjs";
 
 async function cacheGetMetadata(key) {
+  logger.debug(`Got metadata key: ${key}`);
+
   const buffer = await cacheGet(`__metadata__/${key}.json`);
   if (buffer === null) {
     return null;
   }
+
+  logger.debug(`Cached metadata buffer: ${buffer}`);
+  logger.debug(`Cached metadata buffer string: ${buffer.toString()}`);
 
   return JSON.parse(buffer.toString());
 }
