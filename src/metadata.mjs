@@ -7,12 +7,12 @@ async function cacheGetMetadata(key) {
   logger.debug(`Got metadata key: ${key}`);
 
   const buffer = await cacheGet(`__metadata__/${key}.json`);
-  if (buffer === null) {
+
+  if (buffer === null || buffer.length === 0 || buffer.toString() === "") {
     return null;
   }
 
   logger.debug(`Cached metadata buffer: ${buffer}`);
-  logger.debug(`Cached metadata buffer string: ${buffer.toString()}`);
 
   return JSON.parse(buffer.toString());
 }
