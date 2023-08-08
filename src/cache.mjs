@@ -84,6 +84,9 @@ function singleImageTilesIterable(key) {
   };
 }
 
+/**
+ * @param {string} key
+ */
 async function cacheGet(key) {
   try {
     return await fs.promises.readFile(`${TILES_CACHE_DIR_PATH}/${key}`);

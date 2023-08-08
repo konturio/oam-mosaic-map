@@ -6,6 +6,7 @@ import { enqueueTileFetching } from "./titiler_fetcher.mjs";
 import { getGeotiffMetadata } from "./metadata.mjs";
 import { getTileCover } from "./tile_cover.mjs";
 import { keyFromS3Url } from "./key_from_s3_url.mjs";
+import { buildParametrizedFiltersQuery } from "./filters.mjs";
 
 const OAM_LAYER_ID = process.env.OAM_LAYER_ID || "openaerialmap";
 
@@ -141,35 +142,14 @@ async function mosaic512px(z, x, y, filters = {}) {
 
   let dbClient;
   let rows;
-  let sqlQueryParams = [z, x, y];
-  let sqlWhereClause = "ST_TileEnvelope($1, $2, $3) && ST_Transform(geom, 3857)";
-  let nextParamIndex = 4;
-  if (filters.startDatetime) {
-    sqlWhereClause += `and (uploaded_at >= $${nextParamIndex++}::timestamptz)`;
-    sqlQueryParams.push(filters.startDatetime);
-  }
-  if (filters.endDatetime) {
-    sqlWhereClause += `and (uploaded_at <= $${nextParamIndex++}::timestamptz)`;
-    sqlQueryParams.push(filters.endDatetime);
-  }
+
+  const {sqlQuery, sqlQueryParams} = buildParametrizedFiltersQuery(OAM_LAYER_ID, z, x, y, filters)
 
   try {
     dbClient = await db.getClient();
     const dbResponse = await dbClient.query({
       name: "get-image-uuid-in-zxy-tile",
-      text: `with oam_meta as (
-          select
-              properties->>'gsd' as resolution_in_meters, 
-              (properties->>'uploaded_at')::timestamptz as uploaded_at,
-              properties->>'uuid' as uuid, 
-              geom
-          from public.layers_features
-          where layer_id = (select id from public.layers where public_id = '${OAM_LAYER_ID}')
-        )
-        select uuid, ST_AsGeoJSON(ST_Envelope(geom)) geojson
-        from oam_meta
-        where ${sqlWhereClause}
-        order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`,
+      text: sqlQuery,
       values: sqlQueryParams,
     });
     rows = dbResponse.rows;

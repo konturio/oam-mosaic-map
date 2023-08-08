@@ -1,0 +1,20 @@
+{
+    "compilerOptions": {
+        "module": "NodeNext",
+        "target": "ESNext",
+        "moduleResolution": "NodeNext",
+        "checkJs": true,
+        "noEmit": true,
+        "rootDir": "src"
+    },
+    "typeAcquisition": {
+        "enable": true,
+        "include": [
+            "express",
+            "jest"
+        ]
+    },
+    "include": [
+        "./src/**/*"
+, "__tests__/filters.mjs"    ]
+}

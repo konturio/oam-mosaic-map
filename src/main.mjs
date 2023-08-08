@@ -12,6 +12,7 @@ import { cacheInit, cachePurgeMosaic } from "./cache.mjs";
 import { tileRequestQueue, metadataRequestQueue } from "./titiler_fetcher.mjs";
 import { mosaic256px, requestCachedMosaic512px, requestCachedMosaic256px } from "./mosaic.mjs";
 import { invalidateMosaicCache } from "./mosaic_cache_invalidation_job.mjs";
+import { buildFiltersConfigFromRequest } from "./filters.mjs";
 
 dotenv.config({ path: ".env" });
 
@@ -46,6 +47,11 @@ function wrapAsyncCallback(callback) {
   };
 }
 
+/**
+ * @param {number} z
+ * @param {number} x
+ * @param {number} y
+ */
 function isInvalidZxy(z, x, y) {
   return (
     z < 0 ||
@@ -89,15 +95,7 @@ async function mosaic256pxRoute(req, res) {
     return res.status(404).end();
   }
 
-  const filters = {};
-  if (req.query.start) {
-    // FIXME: Verify that query param is valid date string in ISO format
-    filters.startDatetime = req.query.start;
-  }
-  if (req.query.end) {
-    // FIXME: Verify that query param is valid date string in ISO format
-    filters.endDatetime = req.query.end;
-  }
+  const filters = buildFiltersConfigFromRequest(req);
 
   let tile;
   if (Object.keys(filters).length > 0) {
