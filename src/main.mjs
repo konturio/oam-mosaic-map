@@ -26,9 +26,7 @@ const app = express();
 
 app.set("etag", "weak");
 
-app.use(
-  morgan(":method :url :status :res[content-length] - :response-time ms")
-);
+app.use(morgan(":method :url :status :res[content-length] - :response-time ms"));
 app.use(cors());
 
 process.on("unhandledRejection", (error) => {
@@ -53,14 +51,7 @@ function wrapAsyncCallback(callback) {
  * @param {number} y
  */
 function isInvalidZxy(z, x, y) {
-  return (
-    z < 0 ||
-    z >= 32 ||
-    x < 0 ||
-    y < 0 ||
-    x >= Math.pow(2, z) ||
-    y >= Math.pow(2, z)
-  );
+  return z < 0 || z >= 32 || x < 0 || y < 0 || x >= Math.pow(2, z) || y >= Math.pow(2, z);
 }
 
 const mosaicTilesRouter = express.Router();
@@ -96,10 +87,14 @@ async function mosaic256pxRoute(req, res) {
   }
 
   const filters = buildFiltersConfigFromRequest(req);
-
+  const MIN_FILTERABLE_ZOOM = 9;
   let tile;
   if (Object.keys(filters).length > 0) {
-    tile = await mosaic256px(z, x, y, filters);
+    if (z < MIN_FILTERABLE_ZOOM) {
+      tile = await mosaic256px(z, x, y);
+    } else {
+      tile = await mosaic256px(z, x, y, filters);
+    }
   } else {
     tile = await requestCachedMosaic256px(z, x, y);
   }
@@ -141,16 +136,12 @@ app.use("/tiles", mosaicTilesRouter);
 app.use("/oam/mosaic", mosaicTilesRouter);
 
 app.get("/mosaic_viewer", function (req, res, next) {
-  ejs.renderFile(
-    "./src/mosaic_viewer.ejs",
-    { baseUrl: process.env.BASE_URL },
-    (err, data) => {
-      if (err) {
-        next(err);
-      }
-      res.send(data);
+  ejs.renderFile("./src/mosaic_viewer.ejs", { baseUrl: process.env.BASE_URL }, (err, data) => {
+    if (err) {
+      next(err);
     }
-  );
+    res.send(data);
+  });
 });
 
 // separate connection for mvt outlines debug endpoint to make it respond when
