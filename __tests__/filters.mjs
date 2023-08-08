@@ -32,7 +32,23 @@ test("MosaicFiltersConfig", () => {
     },
   };
   const filters = buildFiltersConfigFromRequest(req);
-  expect(Array.isArray(filters.ids)).toBe(true);
+  expect(Array.isArray(filters.ids)).toBe(true);  
+});
+
+test("MosaicFiltersConfig skip invalid filters", () => {
+  const req = {
+    query: {
+      start: "2023-08-01T14:16:36.414Z",
+      end: "2023-08-02T14:Z",
+      id: "6423e51c009af8",
+      resolution: 1,
+    },
+  };
+  const filters = buildFiltersConfigFromRequest(req);
+  expect(filters).toHaveProperty('startDatetime');  
+  expect(filters).not.toHaveProperty('endDatetime');
+  expect(filters).not.toHaveProperty('ids');  
+  expect(filters).not.toHaveProperty('resolution');  
 });
 
 test("ParametrizedFiltersQuery", () => {
@@ -43,5 +59,6 @@ test("ParametrizedFiltersQuery", () => {
     resolution: "low",
   });
   const { sqlQuery, sqlQueryParams } = q;
-  expect(q).toBeTruthy();
+  expect(sqlQueryParams).toHaveLength(6);
+  expect(sqlQuery).toMatch('and (resolution_in_meters >= 5)');
 });
