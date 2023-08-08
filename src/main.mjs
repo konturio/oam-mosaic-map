@@ -13,6 +13,7 @@ import { tileRequestQueue, metadataRequestQueue } from "./titiler_fetcher.mjs";
 import { mosaic256px, requestCachedMosaic512px, requestCachedMosaic256px } from "./mosaic.mjs";
 import { invalidateMosaicCache } from "./mosaic_cache_invalidation_job.mjs";
 import { buildFiltersConfigFromRequest } from "./filters.mjs";
+import { logger } from "./logging.mjs";
 
 dotenv.config({ path: ".env" });
 
@@ -30,7 +31,7 @@ app.use(morgan(":method :url :status :res[content-length] - :response-time ms"))
 app.use(cors());
 
 process.on("unhandledRejection", (error) => {
-  console.log(">>>unhandledRejection", error);
+  logger.error(">>>unhandledRejection", error);
   process.exit(1);
 });
 
@@ -39,7 +40,7 @@ function wrapAsyncCallback(callback) {
     try {
       callback(req, res, next).catch(next);
     } catch (err) {
-      console.log(">err", err);
+      logger.error(">err", err);
       next(err);
     }
   };
@@ -264,7 +265,7 @@ app.post("/purge_mosaic_cache", async (req, res) => {
 });
 
 app.use(function (err, req, res, next) {
-  console.error(err.stack);
+  logger.error(err.stack);
   res.status(500);
   res.send("Internal server error");
   next;
@@ -272,10 +273,10 @@ app.use(function (err, req, res, next) {
 
 function runQueuesStatusLogger() {
   setInterval(() => {
-    console.log(">tile request queue size", tileRequestQueue.size);
-    console.log(">metadata request queue size", metadataRequestQueue.size);
-    console.log(">image processing", sharp.counters());
-    console.log(">db pool waiting count", db.getWaitingCount());
+    logger.debug(">tile request queue size", tileRequestQueue.size);
+    logger.debug(">metadata request queue size", metadataRequestQueue.size);
+    logger.debug(">image processing", sharp.counters());
+    logger.debug(">db pool waiting count", db.getWaitingCount());
   }, 1000);
 }
 
@@ -287,7 +288,7 @@ function runMosaicCacheInvalidationJob() {
     // the same stale tiles from cache.
     limit(() => {
       return invalidateMosaicCache().catch((err) => {
-        console.error(">error in invalidateMosaicCache", err);
+        logger.error(">error in invalidateMosaicCache", err);
       });
     });
   }, 30000);
@@ -301,10 +302,10 @@ async function main() {
     runMosaicCacheInvalidationJob();
 
     app.listen(PORT, () => {
-      console.log(`mosaic-tiler server is listening on port ${PORT}`);
+      logger.info(`mosaic-tiler server is listening on port ${PORT}`);
     });
   } catch (err) {
-    console.error(err);
+    logger.error(err);
     process.exit(1);
   }
 }
