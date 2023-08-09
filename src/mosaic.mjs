@@ -6,8 +6,8 @@ import { enqueueTileFetching } from "./titiler_fetcher.mjs";
 import { getGeotiffMetadata } from "./metadata.mjs";
 import { getTileCover } from "./tile_cover.mjs";
 import { keyFromS3Url } from "./key_from_s3_url.mjs";
+import { buildParametrizedFiltersQuery } from "./filters.mjs";
 
-const TILE_SIZE = 512;
 const OAM_LAYER_ID = process.env.OAM_LAYER_ID || "openaerialmap";
 
 function cacheGetTile(key, z, x, y, extension) {
@@ -69,61 +69,42 @@ async function source(key, z, x, y, meta, geojson) {
   return new Tile(new TileImage(tileBuffer, "png"), z, x, y);
 }
 
+function requestCachedMosaic256px(z, x, y) {
+  return cachedMosaic256px(z, x, y);
+}
+
 const activeMosaicRequests = new Map();
-// wrapper that deduplicates mosiac function calls
-function requestMosaic512px(z, x, y) {
+function requestCachedMosaic512px(z, x, y) {
+  // wrapper that deduplicates mosaic function calls
   const key = JSON.stringify([z, x, y]);
   if (activeMosaicRequests.has(key)) {
     return activeMosaicRequests.get(key);
   }
 
-  const request = mosaic(z, x, y).finally(() =>
-    activeMosaicRequests.delete(key)
-  );
+  const request = cachedMosaic512px(z, x, y).finally(() => activeMosaicRequests.delete(key));
   activeMosaicRequests.set(key, request);
 
   return request;
 }
 
-async function requestMosaic256px(z, x, y) {
-  let tileBuffer = await cacheGetTile("__mosaic256px__", z, x, y, "png");
+async function cachedMosaic256px(z, x, y) {
+  let tileBuffer = await cacheGetTile("__mosaic256__", z, x, y, "png");
   if (tileBuffer) {
-    return new Tile(new TileImage(tileBuffer, "png", 256), z, x, y);
+    return new Tile(new TileImage(tileBuffer, "png"), z, x, y);
   }
 
-  tileBuffer = await cacheGetTile("__mosaic256px__", z, x, y, "jpg");
+  tileBuffer = await cacheGetTile("__mosaic256__", z, x, y, "jpg");
   if (tileBuffer) {
-    return new Tile(new TileImage(tileBuffer, "jpg", 256), z, x, y);
+    return new Tile(new TileImage(tileBuffer, "jpg"), z, x, y);
   }
 
-  let tile256;
-  if (z % 2 === 0) {
-    const tile512 = await requestMosaic512px(z, x, y);
-    tile256 = await tile512.scale(0.5);
-  } else {
-    const parent512 = await requestMosaic512px(z - 1, x >> 1, y >> 1);
-    tile256 = await parent512.extractChild(z, x, y);
-  }
+  const mosaicTile = await mosaic256px(z, x, y);
+  await cachePutTile(mosaicTile.image.buffer, "__mosaic256__", z, x, y, mosaicTile.image.extension);
 
-  tile256.image.transformInJpegIfFullyOpaque();
-
-  await cachePutTile(
-    tile256.image.buffer,
-    "__mosaic256px__",
-    z,
-    x,
-    y,
-    tile256.image.extension
-  );
-
-  return tile256;
+  return mosaicTile;
 }
 
-// request tile for mosaic
-async function mosaic(z, x, y) {
-  let dbClient;
-  let rows;
-
+async function cachedMosaic512px(z, x, y) {
   let tileBuffer = await cacheGetTile("__mosaic__", z, x, y, "png");
   if (tileBuffer) {
     return new Tile(new TileImage(tileBuffer, "png"), z, x, y);
@@ -134,24 +115,42 @@ async function mosaic(z, x, y) {
     return new Tile(new TileImage(tileBuffer, "jpg"), z, x, y);
   }
 
+  const mosaicTile = await mosaic512px(z, x, y);
+  await cachePutTile(mosaicTile.image.buffer, "__mosaic__", z, x, y, mosaicTile.image.extension);
+
+  return mosaicTile;
+}
+
+async function mosaic256px(z, x, y, filters = {}) {
+  const request512pxFn = Object.keys(filters).length > 0 ? mosaic512px : requestCachedMosaic512px;
+  let tile256;
+  if (z % 2 === 0) {
+    const tile512 = await request512pxFn(z, x, y, filters);
+    tile256 = await tile512.scale(0.5);
+  } else {
+    const parent512 = await request512pxFn(z - 1, x >> 1, y >> 1, filters);
+    tile256 = await parent512.extractChild(z, x, y);
+  }
+
+  tile256.image.transformInJpegIfFullyOpaque();
+
+  return tile256;
+}
+
+async function mosaic512px(z, x, y, filters = {}) {
+  const request512pxFn = Object.keys(filters).length > 0 ? mosaic512px : requestCachedMosaic512px;
+
+  let dbClient;
+  let rows;
+
+  const {sqlQuery, sqlQueryParams} = buildParametrizedFiltersQuery(OAM_LAYER_ID, z, x, y, filters)
+
   try {
     dbClient = await db.getClient();
     const dbResponse = await dbClient.query({
       name: "get-image-uuid-in-zxy-tile",
-      text: `with oam_meta as (
-          select
-              properties->>'gsd' as resolution_in_meters, 
-              (properties->>'uploaded_at')::timestamptz as uploaded_at,
-              properties->>'uuid' as uuid, 
-              geom
-          from public.layers_features
-          where layer_id = (select id from public.layers where public_id = '${OAM_LAYER_ID}')
-        )
-        select uuid, ST_AsGeoJSON(ST_Envelope(geom)) geojson
-        from oam_meta
-        where ST_TileEnvelope($1, $2, $3) && ST_Transform(geom, 3857)
-        order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`,
-      values: [z, x, y],
+      text: sqlQuery,
+      values: sqlQueryParams,
     });
     rows = dbResponse.rows;
   } catch (err) {
@@ -164,12 +163,8 @@ async function mosaic(z, x, y) {
 
   const metadataByUuid = {};
   await Promise.all(
-    rows.map((row) => {
-      const f = async () => {
-        metadataByUuid[row.uuid] = await getGeotiffMetadata(row.uuid);
-      };
-
-      return f();
+    rows.map(async (row) => {
+      metadataByUuid[row.uuid] = await getGeotiffMetadata(row.uuid);
     })
   );
 
@@ -191,10 +186,10 @@ async function mosaic(z, x, y) {
     tilePromises.push(
       constructParentTileFromChildren(
         await Promise.all([
-          requestMosaic512px(z + 1, x * 2, y * 2),
-          requestMosaic512px(z + 1, x * 2 + 1, y * 2),
-          requestMosaic512px(z + 1, x * 2, y * 2 + 1),
-          requestMosaic512px(z + 1, x * 2 + 1, y * 2 + 1),
+          request512pxFn(z + 1, x * 2, y * 2, filters),
+          request512pxFn(z + 1, x * 2 + 1, y * 2, filters),
+          request512pxFn(z + 1, x * 2, y * 2 + 1, filters),
+          request512pxFn(z + 1, x * 2 + 1, y * 2 + 1, filters),
         ]),
         z,
         x,
@@ -216,10 +211,10 @@ async function mosaic(z, x, y) {
 
   const tiles = await Promise.all(tilePromises);
 
-  tileBuffer = await sharp({
+  const tileBuffer = await sharp({
     create: {
-      width: TILE_SIZE,
-      height: TILE_SIZE,
+      width: 512,
+      height: 512,
       channels: 4,
       background: { r: 0, g: 0, b: 0, alpha: 0 },
     },
@@ -236,16 +231,8 @@ async function mosaic(z, x, y) {
 
   const tile = new Tile(new TileImage(tileBuffer, "png"), z, x, y);
   await tile.image.transformInJpegIfFullyOpaque();
-  await cachePutTile(
-    tile.image.buffer,
-    "__mosaic__",
-    z,
-    x,
-    y,
-    tile.image.extension
-  );
 
   return tile;
 }
 
-export { requestMosaic512px, requestMosaic256px };
+export { mosaic256px, requestCachedMosaic512px, requestCachedMosaic256px };

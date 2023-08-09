@@ -10,8 +10,9 @@ import zlib from "zlib";
 import pLimit from "p-limit";
 import { cacheInit, cachePurgeMosaic } from "./cache.mjs";
 import { tileRequestQueue, metadataRequestQueue } from "./titiler_fetcher.mjs";
-import { requestMosaic512px, requestMosaic256px } from "./mosaic.mjs";
+import { mosaic256px, requestCachedMosaic512px, requestCachedMosaic256px } from "./mosaic.mjs";
 import { invalidateMosaicCache } from "./mosaic_cache_invalidation_job.mjs";
+import { buildFiltersConfigFromRequest } from "./filters.mjs";
 import { logger } from "./logging.mjs";
 
 dotenv.config({ path: ".env" });
@@ -45,6 +46,11 @@ function wrapAsyncCallback(callback) {
   };
 }
 
+/**
+ * @param {number} z
+ * @param {number} x
+ * @param {number} y
+ */
 function isInvalidZxy(z, x, y) {
   return z < 0 || z >= 32 || x < 0 || y < 0 || x >= Math.pow(2, z) || y >= Math.pow(2, z);
 }
@@ -67,57 +73,43 @@ mosaicTilesRouter.get(
   })
 );
 
-mosaicTilesRouter.get(
-  "/:z(\\d+)/:x(\\d+)/:y(\\d+).png",
-  wrapAsyncCallback(async (req, res) => {
-    res.set("Cache-Control", "public, max-age=300");
+async function mosaic256pxRoute(req, res) {
+  res.set("Cache-Control", "public, max-age=300");
 
-    const z = Number(req.params.z);
-    const x = Number(req.params.x);
-    const y = Number(req.params.y);
-    if (isInvalidZxy(z, x, y)) {
-      return res.status(404).send("Out of bounds");
+  const z = Number(req.params.z);
+  const x = Number(req.params.x);
+  const y = Number(req.params.y);
+  if (isInvalidZxy(z, x, y)) {
+    return res.status(404).send("Out of bounds");
+  }
+
+  if (z == 0) {
+    return res.status(404).end();
+  }
+
+  const filters = buildFiltersConfigFromRequest(req);
+  const MIN_FILTERABLE_ZOOM = 9;
+  let tile;
+  if (Object.keys(filters).length > 0) {
+    if (z < MIN_FILTERABLE_ZOOM) {
+      tile = await mosaic256px(z, x, y);
+    } else {
+      tile = await mosaic256px(z, x, y, filters);
     }
+  } else {
+    tile = await requestCachedMosaic256px(z, x, y);
+  }
 
-    if (z == 0) {
-      return res.status(404).end();
-    }
+  if (tile.image.empty()) {
+    return res.status(204).send();
+  }
 
-    const tile = await requestMosaic256px(z, x, y);
-    if (tile.image.empty()) {
-      return res.status(204).send();
-    }
+  res.type(tile.image.extension);
+  res.send(tile.image.buffer);
+}
 
-    res.type(tile.image.extension);
-    res.send(tile.image.buffer);
-  })
-);
-
-mosaicTilesRouter.get(
-  "/:z(\\d+)/:x(\\d+)/:y(\\d+)@1x.png",
-  wrapAsyncCallback(async (req, res) => {
-    res.set("Cache-Control", "public, max-age=300");
-
-    const z = Number(req.params.z);
-    const x = Number(req.params.x);
-    const y = Number(req.params.y);
-    if (isInvalidZxy(z, x, y)) {
-      return res.status(404).send("Out of bounds");
-    }
-
-    if (z == 0) {
-      return res.status(404).end();
-    }
-
-    const tile = await requestMosaic256px(z, x, y);
-    if (tile.image.empty()) {
-      return res.status(204).send();
-    }
-
-    res.type(tile.image.extension);
-    res.send(tile.image.buffer);
-  })
-);
+mosaicTilesRouter.get("/:z(\\d+)/:x(\\d+)/:y(\\d+).png", wrapAsyncCallback(mosaic256pxRoute));
+mosaicTilesRouter.get("/:z(\\d+)/:x(\\d+)/:y(\\d+)@1x.png", wrapAsyncCallback(mosaic256pxRoute));
 
 mosaicTilesRouter.get(
   "/:z(\\d+)/:x(\\d+)/:y(\\d+)@2x.png",
@@ -131,7 +123,7 @@ mosaicTilesRouter.get(
       return res.status(404).send("Out of bounds");
     }
 
-    const tile = await requestMosaic512px(z, x, y);
+    const tile = await requestCachedMosaic512px(z, x, y);
     if (tile.image.empty()) {
       return res.status(204).send();
     }
