@@ -58,6 +58,7 @@ export function buildFiltersConfigFromRequest(req) {
  * @param {MosaicFiltersConfig} filters
  */
 export function buildParametrizedFiltersQuery(OAM_LAYER_ID, z, x, y, filters = {}) {
+  /** @type {Array<unknown>} */
   let sqlQueryParams = [z, x, y];
   let sqlWhereClause = "ST_TileEnvelope($1, $2, $3) && ST_Transform(geom, 3857)";
   let nextParamIndex = 4;
@@ -97,10 +98,11 @@ export function buildParametrizedFiltersQuery(OAM_LAYER_ID, z, x, y, filters = {
 
   const sqlQuery = `with oam_meta as (
     select
-        properties->>'gsd' as resolution_in_meters, 
-        (properties->>'uploaded_at')::timestamptz as uploaded_at,
-        properties->>'uuid' as uuid, 
-        geom
+      feature_id,
+      (properties->>'gsd')::real as resolution_in_meters, 
+      (properties->>'uploaded_at')::timestamptz as uploaded_at,
+      properties->>'uuid' as uuid, 
+      geom
     from public.layers_features
     where layer_id = (select id from public.layers where public_id = '${OAM_LAYER_ID}')
   )
