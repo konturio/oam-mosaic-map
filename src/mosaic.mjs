@@ -154,7 +154,7 @@ async function mosaic512px(z, x, y, filters = {}) {
   try {
     dbClient = await db.getClient();
     const dbResponse = await dbClient.query({
-      name: "get-image-uuid-in-zxy-tile_" + queryTag,
+      name: "get-image-uuid-in-zxy-tile" + queryTag,
       text: sqlQuery,
       values: sqlQueryParams,
     });
