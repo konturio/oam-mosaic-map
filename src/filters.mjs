@@ -58,6 +58,7 @@ export function buildFiltersConfigFromRequest(req) {
  * @param {MosaicFiltersConfig} filters
  */
 export function buildParametrizedFiltersQuery(OAM_LAYER_ID, z, x, y, filters = {}) {
+  const tags = [];
   /** @type {Array<unknown>} */
   let sqlQueryParams = [z, x, y];
   let sqlWhereClause = "ST_TileEnvelope($1, $2, $3) && ST_Transform(geom, 3857)";
@@ -67,20 +68,24 @@ export function buildParametrizedFiltersQuery(OAM_LAYER_ID, z, x, y, filters = {
   if (filters.startDatetime) {
     sqlWhereClause += ` and (uploaded_at >= $${nextParamIndex++}::timestamptz)`;
     sqlQueryParams.push(filters.startDatetime);
+    tags.push("start");
   }
   if (filters.endDatetime) {
     sqlWhereClause += ` and (uploaded_at <= $${nextParamIndex++}::timestamptz)`;
     sqlQueryParams.push(filters.endDatetime);
+    tags.push("end");
   }
 
   // filter by ids - expects ids=String[]
   if (filters.ids) {
     sqlWhereClause += ` and (feature_id = ANY($${nextParamIndex++}))`;
     sqlQueryParams.push(filters.ids);
+    tags.push("ids");
   }
 
   // filter by resolution
   if (filters.resolution) {
+    tags.push(filters.resolution);
     switch (filters.resolution) {
       case "high":
         sqlWhereClause += ` and (resolution_in_meters < 1)`;
@@ -111,5 +116,5 @@ export function buildParametrizedFiltersQuery(OAM_LAYER_ID, z, x, y, filters = {
   where ${sqlWhereClause}
   order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`;
 
-  return { sqlQuery, sqlQueryParams };
+  return { sqlQuery, sqlQueryParams, queryTag: tags.join("_") };
 }

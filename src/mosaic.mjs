@@ -143,12 +143,18 @@ async function mosaic512px(z, x, y, filters = {}) {
   let dbClient;
   let rows;
 
-  const {sqlQuery, sqlQueryParams} = buildParametrizedFiltersQuery(OAM_LAYER_ID, z, x, y, filters)
+  const { sqlQuery, sqlQueryParams, queryTag } = buildParametrizedFiltersQuery(
+    OAM_LAYER_ID,
+    z,
+    x,
+    y,
+    filters
+  );
 
   try {
     dbClient = await db.getClient();
     const dbResponse = await dbClient.query({
-      name: "get-image-uuid-in-zxy-tile",
+      name: "get-image-uuid-in-zxy-tile" + queryTag,
       text: sqlQuery,
       values: sqlQueryParams,
     });
