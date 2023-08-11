@@ -63,7 +63,7 @@ class CacheMem extends EventEmitter {
     return {
       async *[Symbol.asyncIterator]() {
         for (const key of that.cache.keys()) {
-          if (key.startsWith("__mosaic__") || key.startsWith("__mosaic256px__")) {
+          if (key.startsWith("__mosaic__") || key.startsWith("__mosaic256__")) {
             yield key;
           }
         }
@@ -303,11 +303,11 @@ test("mosaic cache invalidation [add]", async () => {
     cache.put(null, "__mosaic__/0/0/0.png"),
     cache.put(null, "__mosaic__/0/0/0.jpg"),
     cache.put(null, "__mosaic__/11/1233/637.png"),
-    cache.put(null, "__mosaic256px__/12/2466/1274.png"),
+    cache.put(null, "__mosaic256__/12/2466/1274.png"),
     cache.put(null, "__mosaic__/11/1233/637.jpg"),
-    cache.put(null, "__mosaic256px__/12/2466/1274.jpg"),
+    cache.put(null, "__mosaic256__/12/2466/1274.jpg"),
     cache.put(null, "__mosaic__/11/1233/637.jpg"),
-    cache.put(null, "__mosaic256px__/12/2466/1274.jpg"),
+    cache.put(null, "__mosaic256__/12/2466/1274.jpg"),
     cache.put(null, "__mosaic__/11/1233/638.png"),
   ]);
 
@@ -326,9 +326,9 @@ test("mosaic cache invalidation [add]", async () => {
   expect(invalidatedCacheKeys.has("__mosaic__/0/0/0.png")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/0/0/0.jpg")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/11/1233/637.png")).toBe(true);
-  expect(invalidatedCacheKeys.has("__mosaic256px__/12/2466/1274.png")).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic256__/12/2466/1274.png")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/11/1233/637.jpg")).toBe(true);
-  expect(invalidatedCacheKeys.has("__mosaic256px__/12/2466/1274.jpg")).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic256__/12/2466/1274.jpg")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/11/1233/638.png")).toBe(false);
 });
 
@@ -379,11 +379,11 @@ test("mosaic cache invalidation [delete]", async () => {
     cache.put(null, "__mosaic__/0/0/0.png"),
     cache.put(null, "__mosaic__/0/0/0.jpg"),
     cache.put(null, "__mosaic__/11/1233/637.png"),
-    cache.put(null, "__mosaic256px__/12/2466/1274.png"),
+    cache.put(null, "__mosaic256__/12/2466/1274.png"),
     cache.put(null, "__mosaic__/11/1233/637.jpg"),
-    cache.put(null, "__mosaic256px__/12/2466/1274.jpg"),
+    cache.put(null, "__mosaic256__/12/2466/1274.jpg"),
     cache.put(null, "__mosaic__/11/1233/637.jpg"),
-    cache.put(null, "__mosaic256px__/12/2466/1274.jpg"),
+    cache.put(null, "__mosaic256__/12/2466/1274.jpg"),
     cache.put(null, "__mosaic__/11/1233/638.png"),
   ]);
 
@@ -399,8 +399,8 @@ test("mosaic cache invalidation [delete]", async () => {
   expect(invalidatedCacheKeys.has("__mosaic__/0/0/0.png")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/0/0/0.jpg")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/11/1233/637.png")).toBe(true);
-  expect(invalidatedCacheKeys.has("__mosaic256px__/12/2466/1274.png")).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic256__/12/2466/1274.png")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/11/1233/637.jpg")).toBe(true);
-  expect(invalidatedCacheKeys.has("__mosaic256px__/12/2466/1274.jpg")).toBe(true);
+  expect(invalidatedCacheKeys.has("__mosaic256__/12/2466/1274.jpg")).toBe(true);
   expect(invalidatedCacheKeys.has("__mosaic__/11/1233/638.png")).toBe(false);
 });

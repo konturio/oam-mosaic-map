@@ -10,6 +10,7 @@ import {
 } from "./cache.mjs";
 import { getGeotiffMetadata } from "./metadata.mjs";
 import { getTileCover } from "./tile_cover.mjs";
+import { logger } from "./logging.mjs";
 
 function geojsonGeometryFromBounds(topLeft, bottomRight) {
   return {
@@ -32,14 +33,14 @@ async function invalidateImage(geojson, maxzoom, presentMosaicCacheKeys) {
       const staleCacheKeys = [];
       staleCacheKeys.push(`__mosaic__/${z}/${x}/${y}.png`);
       staleCacheKeys.push(`__mosaic__/${z}/${x}/${y}.jpg`);
-      staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.png`);
-      staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2}.png`);
-      staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2 + 1}.png`);
-      staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2 + 1}.png`);
-      staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2}.jpg`);
-      staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2}.jpg`);
-      staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2}/${y * 2 + 1}.jpg`);
-      staleCacheKeys.push(`__mosaic256px__/${z + 1}/${x * 2 + 1}/${y * 2 + 1}.jpg`);
+      staleCacheKeys.push(`__mosaic256__/${z + 1}/${x * 2}/${y * 2}.png`);
+      staleCacheKeys.push(`__mosaic256__/${z + 1}/${x * 2 + 1}/${y * 2}.png`);
+      staleCacheKeys.push(`__mosaic256__/${z + 1}/${x * 2}/${y * 2 + 1}.png`);
+      staleCacheKeys.push(`__mosaic256__/${z + 1}/${x * 2 + 1}/${y * 2 + 1}.png`);
+      staleCacheKeys.push(`__mosaic256__/${z + 1}/${x * 2}/${y * 2}.jpg`);
+      staleCacheKeys.push(`__mosaic256__/${z + 1}/${x * 2 + 1}/${y * 2}.jpg`);
+      staleCacheKeys.push(`__mosaic256__/${z + 1}/${x * 2}/${y * 2 + 1}.jpg`);
+      staleCacheKeys.push(`__mosaic256__/${z + 1}/${x * 2 + 1}/${y * 2 + 1}.jpg`);
 
       for (const cacheKey of staleCacheKeys) {
         if (presentMosaicCacheKeys.has(cacheKey)) {
@@ -53,8 +54,10 @@ async function invalidateImage(geojson, maxzoom, presentMosaicCacheKeys) {
 const OAM_LAYER_ID = process.env.OAM_LAYER_ID || "openaerialmap";
 
 async function invalidateMosaicCache() {
-  const cacheInfo = JSON.parse(await cacheGet("__info__.json"));
+  const cacheInfo = JSON.parse((await cacheGet("__info__.json")).toString());
   const lastUpdated = new Date(cacheInfo.last_updated);
+
+  logger.debug("Mosaic cache invalidation started");
 
   let dbClient;
   // uuids and geojsons for newly added images
@@ -78,6 +81,10 @@ async function invalidateMosaicCache() {
     });
     imagesAddedSinceLastInvalidation = dbResponse.rows;
 
+    logger.debug(
+      `Found ${imagesAddedSinceLastInvalidation.length} images since last invalidation at ${lastUpdated}`
+    );
+
     // TODO: it should be possible to join this query with the one above
     dbResponse = await dbClient.query({
       name: "get-all-image-ids",
@@ -92,6 +99,8 @@ async function invalidateMosaicCache() {
       dbClient.release();
     }
   }
+
+  logger.debug(`All ${allImages.length} images count`);
 
   // read the list of images currently present in the cache so that it can
   // be used later to delete only the tiles that are actually present in
@@ -109,7 +118,9 @@ async function invalidateMosaicCache() {
     // because the image itself was deleted.
     if (!image) {
       const metadataBuffer = await cacheGet(metadataCacheKey);
-      assert.ok(metadataBuffer);
+
+      if (!metadataBuffer || !metadataBuffer.length) continue; // skip empty metadata jsons
+
       const metadata = JSON.parse(metadataBuffer.toString());
       const { bounds, maxzoom } = metadata;
       const geojson = geojsonGeometryFromBounds(bounds.slice(0, 2), bounds.slice(2));
@@ -142,6 +153,8 @@ async function invalidateMosaicCache() {
       "__info__.json"
     );
   }
+
+  logger.debug("Mosaic cache invalidation ended");
 }
 
 export { invalidateMosaicCache };

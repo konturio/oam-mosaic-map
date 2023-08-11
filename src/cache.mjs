@@ -12,7 +12,7 @@ async function cacheInit() {
     await fs.promises.mkdir(TMP_DIR_PATH, { recursive: true });
   }
 
-  for (const dir of ["__mosaic__", "__mosaic256px__", "__metadata__"]) {
+  for (const dir of ["__mosaic__", "__mosaic256__", "__metadata__"]) {
     const dirPath = `${TILES_CACHE_DIR_PATH}/${dir}`;
 
     if (!fs.existsSync(dirPath)) {
@@ -44,7 +44,7 @@ function cachePurgeMosaic() {
 function mosaicTilesIterable() {
   return {
     async *[Symbol.asyncIterator]() {
-      for (const mosaicTilesDir of ["__mosaic__", "__mosaic256px__"]) {
+      for (const mosaicTilesDir of ["__mosaic__", "__mosaic256__"]) {
         const mosaicTilesPath = `${TILES_CACHE_DIR_PATH}/${mosaicTilesDir}`;
         const dir = await opendir(mosaicTilesPath);
         for await (const direntZoom of dir) {
