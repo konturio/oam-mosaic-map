@@ -32,7 +32,7 @@ test("MosaicFiltersConfig", () => {
     },
   };
   const filters = buildFiltersConfigFromRequest(req);
-  expect(Array.isArray(filters.ids)).toBe(true);  
+  expect(Array.isArray(filters.ids)).toBe(true);
 });
 
 test("MosaicFiltersConfig skip invalid filters", () => {
@@ -45,20 +45,21 @@ test("MosaicFiltersConfig skip invalid filters", () => {
     },
   };
   const filters = buildFiltersConfigFromRequest(req);
-  expect(filters).toHaveProperty('startDatetime');  
-  expect(filters).not.toHaveProperty('endDatetime');
-  expect(filters).not.toHaveProperty('ids');  
-  expect(filters).not.toHaveProperty('resolution');  
+  expect(filters).toHaveProperty("startDatetime");
+  expect(filters).not.toHaveProperty("endDatetime");
+  expect(filters).not.toHaveProperty("ids");
+  expect(filters).not.toHaveProperty("resolution");
 });
 
 test("ParametrizedFiltersQuery", () => {
-  const q = buildParametrizedFiltersQuery('1', 1, 2, 3, {
+  const q = buildParametrizedFiltersQuery("1", 1, 2, 3, {
     startDatetime: "2023-08-01T14:16:36.414Z",
     endDatetime: "2023-08-04T14:16:36.414Z",
     ids: ["64cd084423e51c0001889af8", "64cd084423e51c0001889af9"],
     resolution: "low",
   });
-  const { sqlQuery, sqlQueryParams } = q;
+  const { sqlQuery, sqlQueryParams, queryTag } = q;
   expect(sqlQueryParams).toHaveLength(6);
-  expect(sqlQuery).toMatch('and (resolution_in_meters >= 5)');
+  expect(queryTag).toMatch("start_end_ids_low");
+  expect(sqlQuery).toMatch("and (resolution_in_meters >= 5)");
 });
