@@ -118,7 +118,9 @@ async function invalidateMosaicCache() {
     // because the image itself was deleted.
     if (!image) {
       const metadataBuffer = await cacheGet(metadataCacheKey);
-      if (!metadataBuffer || metadataBuffer.length) continue; // skip empty metadata jsons
+
+      if (!metadataBuffer || !metadataBuffer.length) continue; // skip empty metadata jsons
+
       const metadata = JSON.parse(metadataBuffer.toString());
       const { bounds, maxzoom } = metadata;
       const geojson = geojsonGeometryFromBounds(bounds.slice(0, 2), bounds.slice(2));
