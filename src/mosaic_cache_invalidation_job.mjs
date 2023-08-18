@@ -117,12 +117,18 @@ async function invalidateMosaicCache() {
     // all cached mosaic tiles that contain this image need to be invalidated
     // because the image itself was deleted.
     if (!image) {
-      const metadataBuffer = await cacheGet(metadataCacheKey);
-
-      if (!metadataBuffer || !metadataBuffer.length) continue; // skip empty metadata jsons
-
-      const metadata = JSON.parse(metadataBuffer.toString());
-      const { bounds, maxzoom } = metadata;
+      let bounds, maxzoom;
+      try {
+        const metadataBuffer = await cacheGet(metadataCacheKey);
+        if (!metadataBuffer || !metadataBuffer.length) continue;
+        const metadata = JSON.parse(metadataBuffer.toString());
+        if (!metadata) continue;
+        bounds = metadata.bounds;
+        maxzoom = metadata.maxzoom;
+      } catch (error) {
+        logger.warn(`metadata cache invalid for key ${metadataCacheKey}`);
+        continue; // skip invalid metadata jsons
+      }
       const geojson = geojsonGeometryFromBounds(bounds.slice(0, 2), bounds.slice(2));
       await invalidateImage(geojson, maxzoom, presentMosaicCacheKeys);
       await cacheDelete(metadataCacheKey);
