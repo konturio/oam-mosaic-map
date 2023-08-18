@@ -126,7 +126,8 @@ async function invalidateMosaicCache() {
         bounds = metadata.bounds;
         maxzoom = metadata.maxzoom;
       } catch (error) {
-        continue; // skip empty or broken metadata jsons
+        logger.warn(`metadata cache invalid for key ${metadataCacheKey}`);
+        continue; // skip invalid metadata jsons
       }
       const geojson = geojsonGeometryFromBounds(bounds.slice(0, 2), bounds.slice(2));
       await invalidateImage(geojson, maxzoom, presentMosaicCacheKeys);
