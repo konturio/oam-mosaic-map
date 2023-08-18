@@ -36,8 +36,11 @@ async function getClient() {
   const release = client.release;
   // set a timeout of 5 seconds, after which we will log this client's last query
   const timeout = setTimeout(() => {
-    logger.warn("A client has been checked out for more than 5 seconds!");
-    logger.warn(`The last executed query on this client was: ${client.lastQuery}`);
+    const lastQueryStr =
+      client.lastQuery?.name ?? client.lastQuery?.text ?? JSON.stringify(client.lastQuery);
+    logger.warn(
+      `Client has been checked out for more than 5 seconds, last executed query: ${lastQueryStr}`
+    );
   }, 5000);
   // monkey patch the query method to keep track of the last query executed
   client.query = (...args) => {

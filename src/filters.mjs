@@ -114,7 +114,7 @@ export function buildParametrizedFiltersQuery(OAM_LAYER_ID, z, x, y, filters = {
   select uuid, ST_AsGeoJSON(ST_Envelope(geom)) geojson
   from oam_meta
   where ${sqlWhereClause}
-  order by resolution_in_meters desc nulls last, uploaded_at desc nulls last`;
+  order by resolution_in_meters desc nulls last, uploaded_at desc nulls last, feature_id asc`;
 
   return { sqlQuery, sqlQueryParams, queryTag: tags.join("_") };
 }
