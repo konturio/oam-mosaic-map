@@ -161,14 +161,14 @@ mosaicTilesRouter.get(
  *           type: number
  *       - name: start
  *         in: query
- *         description: start date, ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ
+ *         description: filter by start date, ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ
  *         required: false
  *         schema:
  *           type: string
  *           format: date-time
  *       - name: end
  *         in: query
- *         description: end date, ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ
+ *         description: filter by end date, ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ
  *         required: false
  *         schema:
  *           type: string
@@ -185,7 +185,7 @@ mosaicTilesRouter.get(
  *             - low
  *       - name: id
  *         in: query
- *         description: one or more image ids, in form of MongoDB ObjectId Hex String 24 bytes
+ *         description: filter by one or more image ids, in form of MongoDB ObjectId Hex String 24 bytes
  *         required: false
  *         schema:
  *           type: array
