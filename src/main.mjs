@@ -389,7 +389,7 @@ app.get(
  * @openapi
  * /health:
  *   get:
- *     description: health
+ *     description: health check endpoint for monitoring that the API is running and is accessible
  *     responses:
  *       200:
  *         description: status
