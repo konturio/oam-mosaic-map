@@ -1,6 +1,8 @@
 import { promisify } from "util";
 import dotenv from "dotenv";
 import sharp from "sharp";
+import swaggerUI from "swagger-ui-express";
+import swaggerJsDoc from "swagger-jsdoc";
 import * as db from "./db.mjs";
 import express from "express";
 import morgan from "morgan";
@@ -133,7 +135,78 @@ mosaicTilesRouter.get(
   })
 );
 
+/**
+ * @openapi
+ * /tiles/{z}/{x}/{y}.png:
+ *   get:
+ *     description: get mosaic tile image, supports @1x.png and @2x.png resolution
+ *     parameters:
+ *       - name: z
+ *         in: path
+ *         description: z
+ *         required: true
+ *         schema:
+ *           type: number
+ *       - name: x
+ *         in: path
+ *         description: x
+ *         required: true
+ *         schema:
+ *           type: number
+ *       - name: y
+ *         in: path
+ *         description: y
+ *         required: true
+ *         schema:
+ *           type: number
+ *       - name: start
+ *         in: query
+ *         description: filter by start date, ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *       - name: end
+ *         in: query
+ *         description: filter by end date, ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ
+ *         required: false
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *       - name: resolution
+ *         in: query
+ *         description: filter by resolution
+ *         required: false
+ *         schema:
+ *           type: string
+ *           enum: 
+ *             - high
+ *             - medium
+ *             - low
+ *       - name: id
+ *         in: query
+ *         description: filter by one or more image ids, in form of MongoDB ObjectId Hex String 24 bytes
+ *         required: false
+ *         schema:
+ *           type: array
+ *           items:
+ *             type: string
+ *         style: form
+ *         explode: true
+ *     responses:
+ *       200:
+ *         description: mosaic tile image
+ *         content:
+ *           image/png: {}
+ */
 app.use("/tiles", mosaicTilesRouter);
+
+/**
+ * @openapi
+ * /oam/mosaic/{z}/{x}/{y}.png:
+ *   get:
+ *     description: alias of /tiles endpoint
+ */
 app.use("/oam/mosaic", mosaicTilesRouter);
 
 app.get("/mosaic_viewer", function (req, res, next) {
@@ -155,6 +228,36 @@ async function getMvtConnection() {
   return mvtConnection;
 }
 
+/**
+ * @openapi
+ * /outlines/{z}/{x}/{y}.mvt:
+ *   get:
+ *     description: outlines
+ *     parameters:
+ *       - in : path
+ *         name: z
+ *         description: z
+ *         schema:
+ *           type: number
+ *         required: true
+ *       - in : path
+ *         name: x
+ *         description: x
+ *         schema:
+ *           type: number
+ *         required: true
+ *       - in : path
+ *         name: y
+ *         description: y
+ *         schema:
+ *           type: number
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: mvt tile with outlines
+ *         content:
+ *           application/octet-stream: {}
+ */
 app.get(
   "/outlines/:z(\\d+)/:x(\\d+)/:y(\\d+).mvt",
   wrapAsyncCallback(async (req, res) => {
@@ -205,6 +308,36 @@ async function getClustersConnection() {
   return clustersConnection;
 }
 
+/**
+ * @openapi
+ * /clusters/{z}/{x}/{y}.mvt:
+ *   get:
+ *     description: clusters
+ *     parameters:
+ *       - in : path
+ *         name: z
+ *         description: z
+ *         schema:
+ *           type: number
+ *         required: true
+ *       - in : path
+ *         name: x
+ *         description: x
+ *         schema:
+ *           type: number
+ *         required: true
+ *       - in : path
+ *         name: y
+ *         description: y
+ *         schema:
+ *           type: number
+ *         required: true
+ *     responses:
+ *       200:
+ *         description: mvt tile with clusters
+ *         content:
+ *           application/octet-stream: {}
+ */
 app.get(
   "/clusters/:z(\\d+)/:x(\\d+)/:y(\\d+).mvt",
   wrapAsyncCallback(async (req, res) => {
@@ -252,6 +385,15 @@ app.get(
   })
 );
 
+/**
+ * @openapi
+ * /health:
+ *   get:
+ *     description: health check endpoint for monitoring that the API is running and is accessible
+ *     responses:
+ *       200:
+ *         description: status
+ */
 app.get(
   "/health",
   wrapAsyncCallback(async (req, res) => {
@@ -259,6 +401,15 @@ app.get(
   })
 );
 
+/**
+ * @openapi
+ * /purge_mosaic_cache:
+ *   get:
+ *     description: purge mosaic cache
+ *     responses:
+ *       200:
+ *         description: status
+ */
 app.post("/purge_mosaic_cache", async (req, res) => {
   await cachePurgeMosaic();
   res.send("Ok");
@@ -294,6 +445,20 @@ function runMosaicCacheInvalidationJob() {
   }, 30000);
 }
 
+const options = {
+  definition: {
+    openapi: "3.1.0",
+    info: {
+      title: "mosaic-tiler API",
+      version: "1.0.0",
+    },
+  },
+  apis: ["./src/*.mjs"],
+};
+
+const specs = swaggerJsDoc(options);
+app.use("/api-docs", swaggerUI.serve, swaggerUI.setup(specs));
+
 async function main() {
   try {
     await cacheInit();
@@ -304,6 +469,7 @@ async function main() {
     app.listen(PORT, () => {
       logger.info(`mosaic-tiler server is listening on port ${PORT}`);
     });
+    
   } catch (err) {
     logger.error(err);
     process.exit(1);

@@ -30,6 +30,8 @@ It is necessary to have the following environment variables properly set:
 - `TILES_CACHE_DIR_PATH` is the path for the tiles cache.
 - `PGDATABASE`, `PORT`, `PGHOST`, `PGUSER` and `PGPASSWORD` are PostgreSQL-related variables.
 
+API docs and Swagger UI url: BASE_URL/api-docs
+
 ## k8s
 
 Ready Helm configuration for mosaic tiler:
