@@ -1,23 +1,22 @@
 import { promisify } from "util";
-import dotenv from "dotenv";
+import "dotenv/config";
 import sharp from "sharp";
 import swaggerUI from "swagger-ui-express";
 import swaggerJsDoc from "swagger-jsdoc";
-import * as db from "./db.mjs";
 import express from "express";
 import morgan from "morgan";
 import cors from "cors";
 import ejs from "ejs";
 import zlib from "zlib";
 import pLimit from "p-limit";
+import * as db from "./db.mjs";
 import { cacheInit, cachePurgeMosaic } from "./cache.mjs";
 import { tileRequestQueue, metadataRequestQueue } from "./titiler_fetcher.mjs";
 import { mosaic256px, requestCachedMosaic512px, requestCachedMosaic256px } from "./mosaic.mjs";
 import { invalidateMosaicCache } from "./mosaic_cache_invalidation_job.mjs";
 import { buildFiltersConfigFromRequest } from "./filters.mjs";
 import { logger } from "./logging.mjs";
-
-dotenv.config({ path: ".env" });
+import swaggerDefinition from "./swaggerDefinition.cjs";
 
 const PORT = process.env.PORT;
 const BASE_URL = process.env.BASE_URL;
@@ -137,8 +136,18 @@ mosaicTilesRouter.get(
 
 /**
  * @openapi
+ * tags:
+ *   - name: Mosaic tiles
+ *     description: /oam/mosaic endpoint is an alias of /tiles endpoint
+ *
+ */
+
+/**
+ * @openapi
  * /tiles/{z}/{x}/{y}.png:
  *   get:
+ *     tags:
+ *       - Mosaic tiles
  *     description: Get a mosaic tile image. The filtering feature has the capability to filter images based on one or multiple IDs, which can be obtained from the database. Additionally, it can filter images based on their resolution. Images with a resolution_in_meters < 1 are classified as high resolution. Those with 1 <= resolution_in_meters < 5 are classified as medium resolution. And images with a resolution_in_meters value >= 5 are classified as low resolution. Moreover, the filtering feature can also filter images based on their uploaded date. If uploaded_at >= start parameter and uploaded_at <= end parameter, the image will be added to the tile.
  *     parameters:
  *       - name: z
@@ -166,6 +175,7 @@ mosaicTilesRouter.get(
  *         schema:
  *           type: string
  *           format: date-time
+ *           example: 2023-06-01T12:00:00.000Z
  *       - name: end
  *         in: query
  *         description: End date of the time spot for filtering by the date of uploading, ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ
@@ -173,13 +183,14 @@ mosaicTilesRouter.get(
  *         schema:
  *           type: string
  *           format: date-time
+ *           example: 2023-08-04T14:16:36.414Z
  *       - name: resolution
  *         in: query
  *         description: Resolution to filter by it
  *         required: false
  *         schema:
  *           type: string
- *           enum: 
+ *           enum:
  *             - high
  *             - medium
  *             - low
@@ -191,6 +202,7 @@ mosaicTilesRouter.get(
  *           type: array
  *           items:
  *             type: string
+ *             example: 64cd084423e51c0001889af8
  *         style: form
  *         explode: true
  *     responses:
@@ -204,66 +216,8 @@ app.use("/tiles", mosaicTilesRouter);
 /**
  * @openapi
  * /oam/mosaic/{z}/{x}/{y}.png:
- *   get:
- *     description: This endpoint is an alias of /tiles endpoint 
- *     parameters:
- *       - name: z
- *         in: path
- *         description: Zoom
- *         required: true
- *         schema:
- *           type: number
- *       - name: x
- *         in: path
- *         description: X
- *         required: true
- *         schema:
- *           type: number
- *       - name: y
- *         in: path
- *         description: Y
- *         required: true
- *         schema:
- *           type: number
- *       - name: start
- *         in: query
- *         description: Start date of the time spot for filtering by the date of uploading, ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ
- *         required: false
- *         schema:
- *           type: string
- *           format: date-time
- *       - name: end
- *         in: query
- *         description: End date of the time spot for filtering by the date of uploading, ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ
- *         required: false
- *         schema:
- *           type: string
- *           format: date-time
- *       - name: resolution
- *         in: query
- *         description: Resolution to filter by it
- *         required: false
- *         schema:
- *           type: string
- *           enum: 
- *             - high
- *             - medium
- *             - low
- *       - name: id
- *         in: query
- *         description: One or several image ids to filter by, in form of MongoDB ObjectId Hex String 24 bytes
- *         required: false
- *         schema:
- *           type: array
- *           items:
- *             type: string
- *         style: form
- *         explode: true
- *     responses:
- *       200:
- *         description: Mosaic tile image
- *         content:
- *           image/png: {}
+ *   summary: This endpoint is an alias of /tiles endpoint
+ *   $ref: "#/paths/~1tiles~1{z}~1{x}~1{y}.png"
  */
 app.use("/oam/mosaic", mosaicTilesRouter);
 
@@ -425,19 +379,10 @@ function runMosaicCacheInvalidationJob() {
   }, 30000);
 }
 
-const options = {
-  definition: {
-    openapi: "3.1.0",
-    info: {
-      title: "Mosaic-tiler API",
-      description: "Here are endpoints that return raster OAM mosaic tiles by z-x-y.\n\nThey support filtering by date, resolution, and set of IDs.\n\nThe filter is applied only from the 10-th zoom.",
-      version: "1.0.0",
-    },
-  },
+const specs = swaggerJsDoc({
+  definition: swaggerDefinition,
   apis: ["./src/*.mjs"],
-};
-
-const specs = swaggerJsDoc(options);
+});
 app.use("/api-docs", swaggerUI.serve, swaggerUI.setup(specs));
 
 async function main() {
@@ -450,7 +395,6 @@ async function main() {
     app.listen(PORT, () => {
       logger.info(`mosaic-tiler server is listening on port ${PORT}`);
     });
-    
   } catch (err) {
     logger.error(err);
     process.exit(1);

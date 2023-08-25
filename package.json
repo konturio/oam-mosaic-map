@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/main.mjs",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
-    "dev": "nodemon src/main.mjs"
+    "dev": "nodemon src/main.mjs",
+    "gen-openapi": "swagger-jsdoc -d ./src/swaggerDefinition.cjs ./src/*.mjs -o openapi.v3.0.yml"
   },
   "author": "",
   "license": "ISC",
@@ -29,6 +30,9 @@
     "winston": "^3.10.0"
   },
   "devDependencies": {
+    "@types/express": "^4.17.17",
+    "@types/morgan": "^1.9.5",
+    "@types/swagger-jsdoc": "^6.0.1",
     "jest": "^29.4.3",
     "nodemon": "^2.0.22",
     "pixelmatch": "^5.3.0",
