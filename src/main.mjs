@@ -376,11 +376,6 @@ function runMosaicCacheInvalidationJob() {
   }, 30000);
 }
 
-/**
- * @openapi
- * servers:
- *   - url: .
- */
 const specs = swaggerJsDoc({
   definition: swaggerDefinition,
   apis: ["./src/*.mjs"],

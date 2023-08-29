@@ -1,0 +1,98 @@
+openapi: 3.0.0
+info:
+  title: Mosaic-tiler API
+  description: |-
+    Here are endpoints that return raster OAM mosaic tiles by z-x-y.
+
+    They support filtering by date, resolution, and set of IDs.
+
+    The filter is applied only from the 10-th zoom.
+  version: 1.0.0
+servers:
+  - url: /raster-tiler
+paths:
+  "/tiles/{z}/{x}/{y}.png":
+    get:
+      tags:
+        - Mosaic tiles
+      description: Get a mosaic tile image. The filtering feature has the capability
+        to filter images based on one or multiple IDs, which can be obtained
+        from the database. Additionally, it can filter images based on their
+        resolution. Images with a resolution_in_meters < 1 are classified as
+        high resolution. Those with 1 <= resolution_in_meters < 5 are classified
+        as medium resolution. And images with a resolution_in_meters value >= 5
+        are classified as low resolution. Moreover, the filtering feature can
+        also filter images based on their uploaded date. If uploaded_at >= start
+        parameter and uploaded_at <= end parameter, the image will be added to
+        the tile.
+      parameters:
+        - name: z
+          in: path
+          description: Zoom
+          required: true
+          schema:
+            type: number
+        - name: x
+          in: path
+          description: X
+          required: true
+          schema:
+            type: number
+        - name: y
+          in: path
+          description: Y
+          required: true
+          schema:
+            type: number
+        - name: start
+          in: query
+          description: Start date of the time spot for filtering by the date of uploading,
+            ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ. For example -
+            2023-06-01T12:00:00.000Z
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: end
+          in: query
+          description: End date of the time spot for filtering by the date of uploading,
+            ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ. For example -
+            2023-08-04T14:16:36.414Z
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: resolution
+          in: query
+          description: Resolution to filter by it
+          required: false
+          schema:
+            type: string
+            enum:
+              - high
+              - medium
+              - low
+        - name: id
+          in: query
+          description: One or several image ids to filter by, in form of MongoDB ObjectId
+            Hex String 24 bytes. For example - 64cd084423e51c0001889af8
+          required: false
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+      responses:
+        "200":
+          description: Mosaic tile image
+          content:
+            image/png: {}
+  "/oam/mosaic/{z}/{x}/{y}.png":
+    summary: This endpoint is an alias of /tiles endpoint
+    $ref: "#/paths/~1tiles~1{z}~1{x}~1{y}.png"
+components: {}
+tags:
+  - name: Mosaic tiles
+    description: /oam/mosaic endpoint is an alias of /tiles endpoint. Functionality
+      and parameters are the same as for /tiles endpoint
