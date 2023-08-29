@@ -8,12 +8,13 @@ info:
 
     The filter is applied only from the 10-th zoom.
   version: 1.0.0
+servers:
+  - url: /raster-tiler
 paths:
   "/tiles/{z}/{x}/{y}.png":
     get:
       tags:
         - Mosaic tiles
-      summary: Get a mosaic tile image
       description: Get a mosaic tile image. The filtering feature has the capability
         to filter images based on one or multiple IDs, which can be obtained
         from the database. Additionally, it can filter images based on their
@@ -46,21 +47,21 @@ paths:
         - name: start
           in: query
           description: Start date of the time spot for filtering by the date of uploading,
-            ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ
+            ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ. For example -
+            2023-06-01T12:00:00.000Z
           required: false
           schema:
             type: string
             format: date-time
-            example: 2023-06-01T12:00:00.000Z
         - name: end
           in: query
           description: End date of the time spot for filtering by the date of uploading,
-            ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ
+            ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ. For example -
+            2023-08-04T14:16:36.414Z
           required: false
           schema:
             type: string
             format: date-time
-            example: 2023-08-04T14:16:36.414Z
         - name: resolution
           in: query
           description: Resolution to filter by it
@@ -74,13 +75,12 @@ paths:
         - name: id
           in: query
           description: One or several image ids to filter by, in form of MongoDB ObjectId
-            Hex String 24 bytes
+            Hex String 24 bytes. For example - 64cd084423e51c0001889af8
           required: false
           schema:
             type: array
             items:
               type: string
-              example: 64cd084423e51c0001889af8
           style: form
           explode: true
       responses:
@@ -89,12 +89,10 @@ paths:
           content:
             image/png: {}
   "/oam/mosaic/{z}/{x}/{y}.png":
-    description: This endpoint is an alias of /tiles endpoint
+    summary: This endpoint is an alias of /tiles endpoint
     $ref: "#/paths/~1tiles~1{z}~1{x}~1{y}.png"
-    summary: ezzz
 components: {}
 tags:
-  - name: rff
-    description: Note - /oam/mosaic endpoint is an alias of /tiles endpoint
-    externalDocs:
-      url: http://woooo
+  - name: Mosaic tiles
+    description: /oam/mosaic endpoint is an alias of /tiles endpoint. Functionality
+      and parameters are the same as for /tiles endpoint

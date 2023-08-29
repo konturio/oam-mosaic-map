@@ -138,7 +138,7 @@ mosaicTilesRouter.get(
  * @openapi
  * tags:
  *   - name: Mosaic tiles
- *     description: /oam/mosaic endpoint is an alias of /tiles endpoint
+ *     description: /oam/mosaic endpoint is an alias of /tiles endpoint. Functionality and parameters are the same as for /tiles endpoint
  *
  */
 
@@ -170,20 +170,18 @@ mosaicTilesRouter.get(
  *           type: number
  *       - name: start
  *         in: query
- *         description: Start date of the time spot for filtering by the date of uploading, ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ
+ *         description: Start date of the time spot for filtering by the date of uploading, ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ. For example - 2023-06-01T12:00:00.000Z
  *         required: false
  *         schema:
  *           type: string
  *           format: date-time
- *           example: 2023-06-01T12:00:00.000Z
  *       - name: end
  *         in: query
- *         description: End date of the time spot for filtering by the date of uploading, ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ
+ *         description: End date of the time spot for filtering by the date of uploading, ISO 8601 YYYY-MM-DDTHH:mm:ss.sssZ. For example - 2023-08-04T14:16:36.414Z
  *         required: false
  *         schema:
  *           type: string
  *           format: date-time
- *           example: 2023-08-04T14:16:36.414Z
  *       - name: resolution
  *         in: query
  *         description: Resolution to filter by it
@@ -196,13 +194,12 @@ mosaicTilesRouter.get(
  *             - low
  *       - name: id
  *         in: query
- *         description: One or several image ids to filter by, in form of MongoDB ObjectId Hex String 24 bytes
+ *         description: One or several image ids to filter by, in form of MongoDB ObjectId Hex String 24 bytes. For example - 64cd084423e51c0001889af8
  *         required: false
  *         schema:
  *           type: array
  *           items:
- *             type: string
- *             example: 64cd084423e51c0001889af8
+ *             type: string             
  *         style: form
  *         explode: true
  *     responses:
