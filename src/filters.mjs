@@ -66,12 +66,12 @@ export function buildParametrizedFiltersQuery(OAM_LAYER_ID, z, x, y, filters = {
 
   // filter by date
   if (filters.startDatetime) {
-    sqlWhereClause += ` and (uploaded_at >= $${nextParamIndex++}::timestamptz)`;
+    sqlWhereClause += ` and (acquisition_end >= $${nextParamIndex++}::timestamptz)`;
     sqlQueryParams.push(filters.startDatetime);
     tags.push("start");
   }
   if (filters.endDatetime) {
-    sqlWhereClause += ` and (uploaded_at <= $${nextParamIndex++}::timestamptz)`;
+    sqlWhereClause += ` and (acquisition_end <= $${nextParamIndex++}::timestamptz)`;
     sqlQueryParams.push(filters.endDatetime);
     tags.push("end");
   }
@@ -105,7 +105,7 @@ export function buildParametrizedFiltersQuery(OAM_LAYER_ID, z, x, y, filters = {
     select
       feature_id,
       (properties->>'gsd')::real as resolution_in_meters, 
-      (properties->>'uploaded_at')::timestamptz as uploaded_at,
+      (properties->>'acquisition_end')::timestamptz as acquisition_end,
       properties->>'uuid' as uuid, 
       geom
     from public.layers_features
@@ -114,7 +114,7 @@ export function buildParametrizedFiltersQuery(OAM_LAYER_ID, z, x, y, filters = {
   select uuid, ST_AsGeoJSON(ST_Envelope(geom)) geojson
   from oam_meta
   where ${sqlWhereClause}
-  order by resolution_in_meters desc nulls last, uploaded_at desc nulls last, feature_id asc`;
+  order by resolution_in_meters desc nulls last, acquisition_end desc nulls last, feature_id asc`;
 
   return { sqlQuery, sqlQueryParams, queryTag: tags.join("_") };
 }
