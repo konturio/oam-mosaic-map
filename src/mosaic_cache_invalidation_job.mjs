@@ -52,6 +52,7 @@ async function invalidateImage(geojson, maxzoom, presentMosaicCacheKeys) {
 }
 
 const OAM_LAYER_ID = process.env.OAM_LAYER_ID || "openaerialmap";
+const MAX_SET_SIZE = 1_000_000;
 
 async function invalidateMosaicCache() {
   const cacheInfo = JSON.parse((await cacheGet("__info__.json")).toString());
@@ -107,45 +108,56 @@ async function invalidateMosaicCache() {
   // the cache
   const presentMosaicCacheKeys = new Set();
   for await (const key of mosaicTilesIterable()) {
+    if (presentMosaicCacheKeys.size >= MAX_SET_SIZE) {
+      // call processBatch when the set reaches the maximum allowed Set size
+      await processBatch(presentMosaicCacheKeys);
+      presentMosaicCacheKeys.clear();
+    }
+
     presentMosaicCacheKeys.add(key);
   }
 
-  for await (const metadataCacheKey of metadataJsonsIterable()) {
-    const key = metadataCacheKey.replace("__metadata__/", "").replace(".json", "");
-    const image = allImages.find((image) => image.uuid.includes(key));
-    // if metadata for an image is present in the cache but missing in the "origin" database
-    // all cached mosaic tiles that contain this image need to be invalidated
-    // because the image itself was deleted.
-    if (!image) {
-      let bounds, maxzoom;
-      try {
-        const metadataBuffer = await cacheGet(metadataCacheKey);
-        if (!metadataBuffer || !metadataBuffer.length) continue;
-        const metadata = JSON.parse(metadataBuffer.toString());
-        if (!metadata) continue;
-        bounds = metadata.bounds;
-        maxzoom = metadata.maxzoom;
-      } catch (error) {
-        logger.warn(`metadata cache invalid for key ${metadataCacheKey}`);
-        continue; // skip invalid metadata jsons
-      }
-      const geojson = geojsonGeometryFromBounds(bounds.slice(0, 2), bounds.slice(2));
-      await invalidateImage(geojson, maxzoom, presentMosaicCacheKeys);
-      await cacheDelete(metadataCacheKey);
-    }
-  }
+  // call processBatch for the last batch
+  if (presentMosaicCacheKeys.size > 0) await processBatch(presentMosaicCacheKeys);
 
-  let latestUploadedAt;
-  if (imagesAddedSinceLastInvalidation.length > 0) {
-    latestUploadedAt = imagesAddedSinceLastInvalidation[0].uploaded_at;
-    for (const row of imagesAddedSinceLastInvalidation) {
-      const url = row.uuid;
-      const geojson = JSON.parse(row.geojson);
-      if (Date.parse(row.uploaded_at) > Date.parse(latestUploadedAt)) {
-        latestUploadedAt = row.uploaded_at;
+  async function processBatch(mosaicCacheKeys) {
+    for await (const metadataCacheKey of metadataJsonsIterable()) {
+      const key = metadataCacheKey.replace("__metadata__/", "").replace(".json", "");
+      const image = allImages.find((image) => image.uuid.includes(key));
+      // if metadata for an image is present in the cache but missing in the "origin" database
+      // all cached mosaic tiles that contain this image need to be invalidated
+      // because the image itself was deleted.
+      if (!image) {
+        let bounds, maxzoom;
+        try {
+          const metadataBuffer = await cacheGet(metadataCacheKey);
+          if (!metadataBuffer || !metadataBuffer.length) continue;
+          const metadata = JSON.parse(metadataBuffer.toString());
+          if (!metadata) continue;
+          bounds = metadata.bounds;
+          maxzoom = metadata.maxzoom;
+        } catch (error) {
+          logger.warn(`metadata cache invalid for key ${metadataCacheKey}`);
+          continue; // skip invalid metadata jsons
+        }
+        const geojson = geojsonGeometryFromBounds(bounds.slice(0, 2), bounds.slice(2));
+        await invalidateImage(geojson, maxzoom, mosaicCacheKeys);
+        await cacheDelete(metadataCacheKey);
       }
-      const { maxzoom } = await getGeotiffMetadata(url);
-      await invalidateImage(geojson, maxzoom, presentMosaicCacheKeys);
+    }
+
+    let latestUploadedAt;
+    if (imagesAddedSinceLastInvalidation.length > 0) {
+      latestUploadedAt = imagesAddedSinceLastInvalidation[0].uploaded_at;
+      for (const row of imagesAddedSinceLastInvalidation) {
+        const url = row.uuid;
+        const geojson = JSON.parse(row.geojson);
+        if (Date.parse(row.uploaded_at) > Date.parse(latestUploadedAt)) {
+          latestUploadedAt = row.uploaded_at;
+        }
+        const { maxzoom } = await getGeotiffMetadata(url);
+        await invalidateImage(geojson, maxzoom, mosaicCacheKeys);
+      }
     }
   }
 
