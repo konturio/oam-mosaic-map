@@ -159,17 +159,17 @@ async function invalidateMosaicCache() {
         await invalidateImage(geojson, maxzoom, mosaicCacheKeys);
       }
     }
-  }
 
-  if (imagesAddedSinceLastInvalidation.length > 0) {
-    await cachePut(
-      Buffer.from(
-        JSON.stringify({
-          last_updated: latestUploadedAt,
-        })
-      ),
-      "__info__.json"
-    );
+    if (imagesAddedSinceLastInvalidation.length > 0) {
+      await cachePut(
+        Buffer.from(
+          JSON.stringify({
+            last_updated: latestUploadedAt,
+          })
+        ),
+        "__info__.json"
+      );
+    }
   }
 
   logger.debug("Mosaic cache invalidation ended");
