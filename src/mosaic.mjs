@@ -87,14 +87,66 @@ function requestCachedMosaic512px(z, x, y) {
   return request;
 }
 
+async function bufferToPixels(buffer) {
+
+  if (!buffer || buffer.length === 0 || buffer === undefined) {
+    console.log('Input buffer is empty or undefined', !buffer, buffer.length);
+    return null;
+  }
+
+  const { data, info } = await sharp(buffer)
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  const pixels = [];
+  for (let i = 0; i < data.length; i += 4) {
+    pixels.push({
+      r: data[i],
+      g: data[i + 1],
+      b: data[i + 2],
+      a: data[i + 3]
+    });
+  }
+
+  return { pixels, width: info.width, height: info.height };
+}
+
+async function pixelsToBuffer(pixels, width, height) {
+  if (!pixels || pixels.length === 0 || pixels === undefined) {
+    console.log('Input pixels are empty or undefined');
+    return null;
+  }
+
+  const data = new Uint8Array(width * height * 4); // Keeping with RGBA format from the PNG
+  for (let i = 0; i < pixels.length; i++) {
+    const blackThreshold = 33;
+    if (pixels[i].r <= blackThreshold && pixels[i].g <= blackThreshold && pixels[i].b <= blackThreshold) {
+      data[i * 4 + 3] = 0;
+    }
+  }
+
+  // Use sharp to create a PNG buffer
+  const buffer = await sharp(data, { raw: { width, height, channels: 4 } })
+    .png()
+    .toBuffer();
+
+  return buffer;
+}
+
 async function cachedMosaic256px(z, x, y) {
   let tileBuffer = await cacheGetTile("__mosaic256__", z, x, y, "png");
+
   if (tileBuffer) {
-    return new Tile(new TileImage(tileBuffer, "png"), z, x, y);
+
+    const pixels = await bufferToPixels(tileBuffer);
+    const pixelsBuffer = pixelsToBuffer(pixels.pixels, pixels.width, pixels.height);
+
+    return new Tile(new TileImage(pixelsBuffer, "png"), z, x, y);
   }
 
   tileBuffer = await cacheGetTile("__mosaic256__", z, x, y, "jpg");
   if (tileBuffer) {
+
     return new Tile(new TileImage(tileBuffer, "jpg"), z, x, y);
   }
 
@@ -105,13 +157,20 @@ async function cachedMosaic256px(z, x, y) {
 }
 
 async function cachedMosaic512px(z, x, y) {
+
   let tileBuffer = await cacheGetTile("__mosaic__", z, x, y, "png");
+
   if (tileBuffer) {
-    return new Tile(new TileImage(tileBuffer, "png"), z, x, y);
+
+    const pixels = await bufferToPixels(tileBuffer);
+    const pixelsBuffer = pixelsToBuffer(pixels.pixels, pixels.width, pixels.height);
+
+    return new Tile(new TileImage(pixelsBuffer, "png"), z, x, y);
   }
 
   tileBuffer = await cacheGetTile("__mosaic__", z, x, y, "jpg");
   if (tileBuffer) {
+
     return new Tile(new TileImage(tileBuffer, "jpg"), z, x, y);
   }
 
