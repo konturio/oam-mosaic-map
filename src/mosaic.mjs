@@ -217,6 +217,34 @@ async function mosaic512px(z, x, y, filters = {}) {
 
   const tiles = await Promise.all(tilePromises);
 
+  // Begin cloudless stitching logic
+  const filteredTiles = tiles
+    .filter((tile) => !tile.empty())
+    .map((tile, index) => ({
+      tile,
+      meta: metadataByUuid[rows[index].uuid],
+    }));
+
+  // Sort tiles based on the criteria
+  filteredTiles.sort((a, b) => {
+    // 1. Prefer the latest image
+    const dateA = new Date(a.meta.uploaded_at);
+    const dateB = new Date(b.meta.uploaded_at);
+
+    // 2. Prefer higher resolution (lower GSD)
+    const gsdA = a.meta.gsd;
+    const gsdB = b.meta.gsd;
+
+    // 3. Prefer larger file size
+    const fileSizeA = a.meta.file_size;
+    const fileSizeB = b.meta.file_size;
+
+    // Comparison based on criteria
+    if (dateA !== dateB) return dateB - dateA;
+    if (gsdA !== gsdB) return gsdA - gsdB;
+    return fileSizeB - fileSizeA;
+  });
+
   const tileBuffer = await sharp({
     create: {
       width: 512,
@@ -226,12 +254,14 @@ async function mosaic512px(z, x, y, filters = {}) {
     },
   })
     .composite(
-      tiles
-        .filter((tile) => !tile.empty())
-        .map((tile) => {
-          return { input: tile.image.buffer, top: 0, left: 0 };
-        })
+      filteredTiles.map(({ tile }) => {
+        return { input: tile.image.buffer, top: 0, left: 0, blend: "over" };
+      })
     )
+    .modulate({
+      brightness: 0.95, // Avoid overly white pixels
+    })
+    .linear(1, -0.1) // Avoid overly black pixels
     .png()
     .toBuffer();
 
