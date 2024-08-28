@@ -71,22 +71,27 @@ const levels = {
 
 ## How to run mosaic map locally
 
-1. Ensure you have pgadmin installed and running on your machine.
-2. Ensure you have a kubectl and/or Lens installed on your machine.
-3. Ensure you have active port forwarding to the production layers-db.
+1. Make sure pgadmin is installed and running on your machine.
+2. Install kubectl and/or Lens on your machine.
+3. Set up active port forwarding to the production layers-db.
 4. Open pgadmin and create a new server. Fill the credentials as follows:
+
    - Name: mosaic-map-prod
    - Hostname: localhost
    - Port: 'the port you are forwarding to'
    - Maintenance database: layers-db
    - Username: 'username to connect to the layers-db'
    - Password: 'password to connect to the layers-db'
-  Click save and then connect to the server.
+   - Click save and then connect to the server.
+
 5. Run the project locally using docker compose:
-  ```bash
-  docker-compose up --build
-  ```
+
+   ```bash
+   docker-compose up --build
+   ```
+
 6. Connect pgadmin to your local database:
+
    - Right-click on Servers -> Create -> Server
    - Fill the credentials as follows:
      - Name: mosaic-map-local
@@ -95,17 +100,22 @@ const levels = {
      - Maintenance database: postgres
      - Username: postgres
      - Password: postgres
-    Click save and then connect to the server.
+       Click save and then connect to the server.
+
 7. Export the data from the production database to your local database as csv files:
-    - Right-click on the `layers_features` table -> PSQL Tool
+
+   - Right-click on the `layers_features` table -> PSQL Tool
    - Run the one more query:
+
      ```sql
       \COPY (SELECT feature_id, 1 AS layer_id, properties, geom, last_updated, zoom FROM public.layers_features WHERE layer_id = (SELECT id FROM public.layers WHERE public_id = 'openaerialmap') ORDER BY last_updated DESC LIMIT 100) TO '/path_on_your_pc/exported_file.csv'WITH CSV HEADER DELIMITER ',' QUOTE '`';
      ```
+
 8. Import the csv files to your local database:
+
    - Right-click on the local database `layers_features` table -> Import/Export Data
    - Select the exported csv file and click on the Import button.
    - Don't forget to set quote character to '`' and delimiter to ','.
    - Click on the Import button.
-  
-9.  Open the browser and navigate to http://localhost:8001/mosaic-viewer to view the mosaic map.
+
+9. Open the browser and navigate to http://localhost:8001/mosaic-viewer to view the mosaic map.

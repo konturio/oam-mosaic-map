@@ -1,6 +1,6 @@
 import got from "got";
 import PQueue from "p-queue";
-import os from "os";
+import os from "node:os";
 
 // Получаем количество ядер
 const numCPUs = os.cpus().length;
