@@ -261,7 +261,6 @@ async function mosaic512px(z, x, y, filters = {}) {
     .modulate({
       brightness: 0.95, // Avoid overly white pixels
     })
-    .linear(1, -0.1) // Avoid overly black pixels
     .png()
     .toBuffer();
 
