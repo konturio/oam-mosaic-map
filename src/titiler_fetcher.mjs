@@ -2,7 +2,7 @@ import got from "got";
 import PQueue from "p-queue";
 import os from "node:os";
 
-// Получаем количество ядер
+// Getting the number of cores
 const numCPUs = os.cpus().length;
 
 console.log("numCPUs:", numCPUs);
