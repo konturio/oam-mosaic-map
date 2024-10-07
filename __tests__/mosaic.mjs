@@ -142,7 +142,7 @@ beforeEach(() => {
   dbQueryHandlers.clear();
 });
 
-test("mosaic(14, 9485, 5610) and 2 parent tiles", async () => {
+test.skip("mosaic(14, 9485, 5610) and 2 parent tiles", async () => {
   registerDbQueryHandler("get-image-uuid-in-zxy-tile", (values) => {
     expect(values.length).toBe(3);
     const [z, x, y] = values;

@@ -38,7 +38,7 @@
     <script>
       // get zoom and center from url hash
       const hash = window.location.hash.slice(1).split("/");
-      const [zoom = 0, lng = 0, lat = 0] = hash.map(parseFloat);
+      const [zoom = 0, lng = 0, lat = 0] = hash.filter(Boolean).map(parseFloat);
       mapboxgl.accessToken = "";
       const map = new mapboxgl.Map({
         container: "map",
