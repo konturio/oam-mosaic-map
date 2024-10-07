@@ -1,9 +1,15 @@
 import got from "got";
 import PQueue from "p-queue";
+import os from "node:os";
+
+// Getting the number of cores
+const numCPUs = os.cpus().length;
+
+console.log("numCPUs:", numCPUs);
 
 const TITILER_BASE_URL = process.env.TITILER_BASE_URL;
 
-const tileRequestQueue = new PQueue({ concurrency: 32 });
+const tileRequestQueue = new PQueue({ concurrency: numCPUs });
 const activeTileRequests = new Map();
 
 async function fetchTile(url) {
@@ -12,10 +18,7 @@ async function fetchTile(url) {
       throwHttpErrors: true,
     });
 
-    const [response, buffer] = await Promise.all([
-      responsePromise,
-      responsePromise.buffer(),
-    ]);
+    const [response, buffer] = await Promise.all([responsePromise, responsePromise.buffer()]);
 
     if (response.statusCode === 204) {
       return null;
@@ -23,10 +26,7 @@ async function fetchTile(url) {
 
     return buffer;
   } catch (err) {
-    if (
-      err.response &&
-      (err.response.statusCode === 404 || err.response.statusCode === 500)
-    ) {
+    if (err.response && (err.response.statusCode === 404 || err.response.statusCode === 500)) {
       return null;
     } else {
       throw err;
@@ -41,7 +41,7 @@ async function enqueueTileFetching(tileUrl, z, x, y) {
   }
 
   const request = tileRequestQueue
-    .add(() => fetchTile(url))
+    .add(() => fetchTile(url), { priority: z })
     .finally(() => {
       activeTileRequests.delete(url);
     });
@@ -53,7 +53,7 @@ async function enqueueTileFetching(tileUrl, z, x, y) {
 export { enqueueTileFetching, tileRequestQueue };
 
 const activeMetaRequests = new Map();
-const metadataRequestQueue = new PQueue({ concurrency: 32 });
+const metadataRequestQueue = new PQueue({ concurrency: numCPUs });
 
 async function fetchTileMetadata(uuid) {
   try {
@@ -62,10 +62,7 @@ async function fetchTileMetadata(uuid) {
     const metadata = await got(url.href).json();
     return metadata;
   } catch (err) {
-    if (
-      err.response &&
-      (err.response.statusCode === 404 || err.response.statusCode === 500)
-    ) {
+    if (err.response && (err.response.statusCode === 404 || err.response.statusCode === 500)) {
       return null;
     } else {
       throw err;

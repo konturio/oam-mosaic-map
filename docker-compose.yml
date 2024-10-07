@@ -1,9 +1,8 @@
-version: "3"
-
 services:
   mosaic:
     build: .
     environment:
+      - NODE_ENV=development
       - OAM_LAYER_ID=openaerialmap
       - PORT=8001
       - PGHOST=postgres
@@ -14,6 +13,8 @@ services:
       - TITILER_BASE_URL=http://titiler:8000
       - BASE_URL=http://localhost:8001
       - TILES_CACHE_DIR_PATH=/tiles
+      - LOG_LEVEL=debug
+
     ports:
       - 8001:8001
     depends_on:
@@ -31,6 +32,8 @@ services:
       - POSTGRES_PASSWORD=postgres
     ports:
       - 5432:5432
+    volumes:
+      - postgres:/var/lib/postgresql/data
 
   titiler:
     image: developmentseed/titiler
@@ -39,3 +42,6 @@ services:
       - WORKERS_PER_CORE=1
     ports:
       - 8000:8000
+
+volumes:
+  postgres: ~

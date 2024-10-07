@@ -7,6 +7,7 @@ import { getGeotiffMetadata } from "./metadata.mjs";
 import { getTileCover } from "./tile_cover.mjs";
 import { keyFromS3Url } from "./key_from_s3_url.mjs";
 import { buildParametrizedFiltersQuery } from "./filters.mjs";
+import { blendTiles } from "./tileBlender.mjs";
 
 const OAM_LAYER_ID = process.env.OAM_LAYER_ID || "openaerialmap";
 
@@ -217,23 +218,37 @@ async function mosaic512px(z, x, y, filters = {}) {
 
   const tiles = await Promise.all(tilePromises);
 
-  const tileBuffer = await sharp({
-    create: {
-      width: 512,
-      height: 512,
-      channels: 4,
-      background: { r: 0, g: 0, b: 0, alpha: 0 },
-    },
-  })
-    .composite(
-      tiles
-        .filter((tile) => !tile.empty())
-        .map((tile) => {
-          return { input: tile.image.buffer, top: 0, left: 0 };
-        })
-    )
-    .png()
-    .toBuffer();
+  // Begin cloudless stitching logic
+  const filteredTiles = tiles
+    .filter((tile) => !tile.empty())
+    .map((tile, index) => ({
+      tile,
+      meta: metadataByUuid[rows[index].uuid],
+    }));
+
+  // Sort tiles based on the criteria
+  filteredTiles.sort((a, b) => {
+    // 1. Prefer the latest image
+    const dateA = new Date(a.meta.uploaded_at);
+    const dateB = new Date(b.meta.uploaded_at);
+
+    // 2. Prefer larger file size
+    const fileSizeA = a.meta.file_size;
+    const fileSizeB = b.meta.file_size;
+
+    // 3. Prefer higher resolution (lower GSD)
+    const gsdA = a.meta.gsd;
+    const gsdB = b.meta.gsd;
+
+    // Comparison based on criteria
+    if (dateA !== dateB) return dateB - dateA;
+    if (fileSizeA !== fileSizeB) return fileSizeB - fileSizeA;
+    return gsdA - gsdB;
+  });
+
+  const tileBuffers = filteredTiles.map(({ tile }) => tile.image.buffer);
+
+  const tileBuffer = await blendTiles(tileBuffers, 512, 512);
 
   const tile = new Tile(new TileImage(tileBuffer, "png"), z, x, y);
   await tile.image.transformInJpegIfFullyOpaque();

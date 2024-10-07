@@ -3,23 +3,13 @@
   <head>
     <meta charset="utf-8" />
     <title>Mosaic Viewer</title>
-    <meta
-      name="viewport"
-      content="initial-scale=1,maximum-scale=1,user-scalable=no"
-    />
+    <meta name="viewport" content="initial-scale=1,maximum-scale=1,user-scalable=no" />
     <script src="https://api.tiles.mapbox.com/mapbox-gl-js/v1.13.0/mapbox-gl.js"></script>
-    <link
-      href="https://api.tiles.mapbox.com/mapbox-gl-js/v1.13.0/mapbox-gl.css"
-      rel="stylesheet"
-    />
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="upgrade-insecure-requests"
-    />
+    <link href="https://api.tiles.mapbox.com/mapbox-gl-js/v1.13.0/mapbox-gl.css" rel="stylesheet" />
+    <meta http-equiv="Content-Security-Policy" content="upgrade-insecure-requests" />
     <style>
       body {
-        font-family: Inconsolata, Consolas, "Liberation Mono", Menlo, Courier,
-          monospace;
+        font-family: Inconsolata, Consolas, "Liberation Mono", Menlo, Courier, monospace;
         line-height: 1.5em;
         font-size: 13.5px;
         margin: 0;
@@ -46,19 +36,22 @@
   <body>
     <div id="map"></div>
     <script>
+      // get zoom and center from url hash
+      const hash = window.location.hash.slice(1).split("/");
+      const [zoom = 0, lng = 0, lat = 0] = hash.filter(Boolean).map(parseFloat);
       mapboxgl.accessToken = "";
       const map = new mapboxgl.Map({
         container: "map",
         style: "https://api.kontur.io/layers/tiles/basemap/style_day.json",
-        zoom: 0,
-        center: [0, 0],
+        center: [lng, lat],
+        zoom: zoom,
       });
 
       window.map = map;
 
-      // map.showTileBoundaries = true;
-      // map.showCollisionBoxes = false;
-      // map.showPadding = true;
+      map.showTileBoundaries = true;
+      map.showCollisionBoxes = false;
+      map.showPadding = true;
 
       map.on("load", () => {
         map.addSource("mosaic", {
@@ -97,6 +90,13 @@
           },
           paint: { "text-color": "white" },
         });
+      });
+
+      // on map move add current viewport zoom + center to url hash
+      map.on("moveend", () => {
+        const { lng, lat } = map.getCenter();
+        const zoom = map.getZoom();
+        window.location.hash = `#${zoom.toFixed(2)}/${lng.toFixed(4)}/${lat.toFixed(4)}`;
       });
     </script>
   </body>

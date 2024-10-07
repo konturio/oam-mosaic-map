@@ -18,6 +18,7 @@ import { buildFiltersConfigFromRequest } from "./filters.mjs";
 import { logger } from "./logging.mjs";
 import swaggerDefinition from "./swaggerDefinition.cjs";
 
+const isDev = process.env.NODE_ENV === "development";
 const PORT = process.env.PORT;
 const BASE_URL = process.env.BASE_URL;
 const OAM_LAYER_ID = process.env.OAM_LAYER_ID || "openaerialmap";
@@ -75,7 +76,8 @@ mosaicTilesRouter.get(
 );
 
 async function mosaic256pxRoute(req, res) {
-  res.set("Cache-Control", "public, max-age=300");
+  if (isDev) res.set("Cache-Control", "public, no-cache");
+  else res.set("Cache-Control", "public, max-age=300");
 
   const z = Number(req.params.z);
   const x = Number(req.params.x);
@@ -115,7 +117,8 @@ mosaicTilesRouter.get("/:z(\\d+)/:x(\\d+)/:y(\\d+)@1x.png", wrapAsyncCallback(mo
 mosaicTilesRouter.get(
   "/:z(\\d+)/:x(\\d+)/:y(\\d+)@2x.png",
   wrapAsyncCallback(async (req, res) => {
-    res.set("Cache-Control", "public, max-age=300");
+    if (isDev) res.set("Cache-Control", "public, no-cache");
+    else res.set("Cache-Control", "public, max-age=300");
 
     const z = Number(req.params.z);
     const x = Number(req.params.x);
@@ -199,7 +202,7 @@ mosaicTilesRouter.get(
  *         schema:
  *           type: array
  *           items:
- *             type: string             
+ *             type: string
  *         style: form
  *         explode: true
  *     responses:
@@ -240,7 +243,8 @@ async function getMvtConnection() {
 app.get(
   "/outlines/:z(\\d+)/:x(\\d+)/:y(\\d+).mvt",
   wrapAsyncCallback(async (req, res) => {
-    res.set("Cache-Control", "public, max-age=300");
+    if (isDev) res.set("Cache-Control", "public, no-cache");
+    else res.set("Cache-Control", "public, max-age=300");
 
     const z = Number(req.params.z);
     const x = Number(req.params.x);
@@ -290,7 +294,8 @@ async function getClustersConnection() {
 app.get(
   "/clusters/:z(\\d+)/:x(\\d+)/:y(\\d+).mvt",
   wrapAsyncCallback(async (req, res) => {
-    res.set("Cache-Control", "public, max-age=300");
+    if (isDev) res.set("Cache-Control", "public, no-cache");
+    else res.set("Cache-Control", "public, max-age=300");
 
     const z = Number(req.params.z);
     const x = Number(req.params.x);
@@ -355,11 +360,18 @@ app.use(function (err, req, res, next) {
 
 function runQueuesStatusLogger() {
   setInterval(() => {
-    logger.debug(">tile request queue size", tileRequestQueue.size);
-    logger.debug(">metadata request queue size", metadataRequestQueue.size);
+    logger.debug(`>tile request queue size: ${tileRequestQueue.size}`);
+    logger.debug(`>metadata request queue size: ${metadataRequestQueue.size}`);
     logger.debug(">image processing", sharp.counters());
     logger.debug(">db pool waiting count", db.getWaitingCount());
   }, 1000);
+
+  setInterval(() => {
+    logger.info(`>tile request queue size: ${tileRequestQueue.size}`);
+    logger.info(`>metadata request queue size: ${metadataRequestQueue.size}`);
+    logger.info(">image processing", sharp.counters());
+    logger.info(">db pool waiting count", db.getWaitingCount());
+  }, 3600);
 }
 
 function runMosaicCacheInvalidationJob() {
