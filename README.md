@@ -119,3 +119,22 @@ const levels = {
    - Click on the Import button.
 
 9. Open the browser and navigate to http://localhost:8001/mosaic-viewer to view the mosaic map.
+
+## Environment variables
+
+| Name                    | Description                             | Default Value   |
+| ----------------------- | --------------------------------------- | --------------- |
+| `PGHOST`                | PostgreSQL host                         |                 |
+| `PGUSER`                | PostgreSQL user                         |                 |
+| `PGPASSWORD`            | PostgreSQL password                     |                 |
+| `PGDATABASE`            | PostgreSQL database name                | `postgres`      |
+| `OAM_LAYER_ID`          | OpenAerialMap layer ID                  | `openaerialmap` |
+| `PORT`                  | Server port                             |                 |
+| `BASE_URL`              | Root URL of the server                  |                 |
+| `TITILER_BASE_URL`      | URL of your Titiler installation        |                 |
+| `TILES_CACHE_DIR_PATH`  | Path for the tiles cache                | `/tiles`        |
+| `LOG_LEVEL`             | Logging level                           |                 |
+| `DB_POOL_SIZE`          | Size of the PostgreSQL connection pool  | `16`            |
+| `DB_DISABLE_SSL`        | Disable SSL for PostgreSQL connection   | `false`         |
+| `TILE_FETCH_TIMEOUT_MS` | Tile fetch timeout in milliseconds      | `60000`         |
+| `FETCH_QUEUE_TTL_MS`    | Fetch promise queue TTL in milliseconds | `600000`        |
