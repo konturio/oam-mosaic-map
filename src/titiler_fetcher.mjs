@@ -34,7 +34,7 @@ async function fetchTile(url) {
   }
 }
 
-const FETCH_QUEUE_TTL = parseInt(process.env.TILE_FETCH_TTL_MS, 10) || 1000 * 60 * 10; // 10 minutes default
+const FETCH_QUEUE_TTL = Number.parseInt(process.env.TILE_FETCH_TTL_MS, 10) || 1000 * 60 * 10; // 10 minutes default
 
 async function enqueueTileFetching(tileUrl, z, x, y) {
   const url = tileUrl.replace("{z}", z).replace("{x}", x).replace("{y}", y);
@@ -71,7 +71,7 @@ async function fetchTileMetadata(uuid) {
     const metadata = await got(url.href).json();
     return metadata;
   } catch (err) {
-    if (err?.response?.statusCode in [404, 500]) {
+    if ([404, 500].includes(err?.response?.statusCode)) {
       return null;
     } else {
       throw err;
