@@ -44,6 +44,13 @@ async function enqueueTileFetching(tileUrl, z, x, y) {
 
   const request = tileRequestQueue
     .add(() => fetchTile(url), { priority: z, timeout: FETCH_QUEUE_TTL })
+    .catch((error) => {
+      if (error.name === "TimeoutError") {
+        console.error(`Tile request timed out after ${FETCH_QUEUE_TTL}ms for URL: ${url}`);
+      } else {
+        console.error(`Error fetching tile: ${url}`, error);
+      }
+    })
     .finally(() => {
       activeTileRequests.delete(url);
     });
@@ -64,7 +71,7 @@ async function fetchTileMetadata(uuid) {
     const metadata = await got(url.href).json();
     return metadata;
   } catch (err) {
-    if (err.response && (err.response.statusCode === 404 || err.response.statusCode === 500)) {
+    if (err?.response?.statusCode in [404, 500]) {
       return null;
     } else {
       throw err;

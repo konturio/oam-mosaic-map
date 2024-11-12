@@ -171,7 +171,7 @@ async function mosaic512px(z, x, y, filters = {}) {
   const metadataByUuid = {};
   await Promise.all(
     rows.map(async (row) => {
-      if (row && row.uuid) {
+      if (row?.uuid) {
         metadataByUuid[row.uuid] = await getGeotiffMetadata(row.uuid);
       }
     })
