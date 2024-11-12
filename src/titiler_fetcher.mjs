@@ -34,6 +34,8 @@ async function fetchTile(url) {
   }
 }
 
+const FETCH_QUEUE_TTL = 1000 * 60 * 10; // 10 minutes
+
 async function enqueueTileFetching(tileUrl, z, x, y) {
   const url = tileUrl.replace("{z}", z).replace("{x}", x).replace("{y}", y);
   if (activeTileRequests.get(url)) {
@@ -41,7 +43,7 @@ async function enqueueTileFetching(tileUrl, z, x, y) {
   }
 
   const request = tileRequestQueue
-    .add(() => fetchTile(url), { priority: z })
+    .add(() => fetchTile(url), { priority: z, timeout: FETCH_QUEUE_TTL })
     .finally(() => {
       activeTileRequests.delete(url);
     });

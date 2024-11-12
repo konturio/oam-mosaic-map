@@ -171,10 +171,11 @@ async function mosaic512px(z, x, y, filters = {}) {
   const metadataByUuid = {};
   await Promise.all(
     rows.map(async (row) => {
-      metadataByUuid[row.uuid] = await getGeotiffMetadata(row.uuid);
+      if (row && row.uuid) {
+        metadataByUuid[row.uuid] = await getGeotiffMetadata(row.uuid);
+      }
     })
   );
-
   const tilePromises = [];
   if (z < 9) {
     for (const row of rows) {
