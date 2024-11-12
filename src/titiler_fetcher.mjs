@@ -34,7 +34,7 @@ async function fetchTile(url) {
   }
 }
 
-const FETCH_QUEUE_TTL = 1000 * 60 * 10; // 10 minutes
+const FETCH_QUEUE_TTL = parseInt(process.env.TILE_FETCH_TTL_MS, 10) || 1000 * 60 * 10; // 10 minutes default
 
 async function enqueueTileFetching(tileUrl, z, x, y) {
   const url = tileUrl.replace("{z}", z).replace("{x}", x).replace("{y}", y);
