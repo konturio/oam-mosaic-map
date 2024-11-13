@@ -225,7 +225,8 @@ async function mosaic512px(z, x, y, filters = {}) {
     .map((tile, index) => ({
       tile,
       meta: metadataByUuid[rows[index].uuid],
-    }));
+    }))
+    .filter(Boolean);
 
   // Sort tiles based on the criteria
   filteredTiles.sort((a, b) => {
