@@ -49,10 +49,17 @@ async function enqueueTileFetching(tileUrl, z, x, y) {
   const request = tileRequestQueue
     .add(() => fetchTile(url), { priority: Math.pow(2, z), timeout: FETCH_QUEUE_TTL_MS })
     .catch((error) => {
+      const logContext = {
+        url,
+        zoomLevel: z,
+        errorType: error.name,
+        errorMessage: error.message,
+        timeout: FETCH_QUEUE_TTL_MS
+      };
       if (error.name === "TimeoutError") {
-        console.error(`Tile request timed out after ${FETCH_QUEUE_TTL_MS}ms for URL: ${url}`);
+        console.error('Tile request timeout', logContext);
       } else {
-        console.error(`Error fetching tile: ${url}`, error);
+        console.error('Tile request failed', logContext);
       }
     })
     .finally(() => {
