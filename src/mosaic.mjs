@@ -226,7 +226,13 @@ async function mosaic512px(z, x, y, filters = {}) {
       tile,
       meta: metadataByUuid[rows[index].uuid],
     }))
-    .filter(({ meta }) => meta); // Filter out null meta objects
+    .filter(({ meta, tile }, index) => {
+      if (!meta) {
+        console.warn(`Null metadata found for tile at index ${index}, skipping...`);
+        return false;
+      }
+      return true;
+    });
 
   // Sort tiles based on the criteria
   filteredTiles.sort((a, b) => {
