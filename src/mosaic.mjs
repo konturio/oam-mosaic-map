@@ -226,7 +226,7 @@ async function mosaic512px(z, x, y, filters = {}) {
       tile,
       meta: metadataByUuid[rows[index].uuid],
     }))
-    .filter(Boolean);
+    .filter(({ meta }) => meta); // Filter out null meta objects
 
   // Sort tiles based on the criteria
   filteredTiles.sort((a, b) => {
