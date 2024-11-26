@@ -38,7 +38,7 @@
     <script>
       // get zoom and center from url hash
       const hash = window.location.hash.slice(1).split("/");
-      const [zoom = 0, lng = 0, lat = 0] = hash.filter(Boolean).map(parseFloat);
+      const [zoom = 0, lat = 0, lng = 0] = hash.filter(Boolean).map(parseFloat);
       mapboxgl.accessToken = "";
       const map = new mapboxgl.Map({
         container: "map",
@@ -96,7 +96,7 @@
       map.on("moveend", () => {
         const { lng, lat } = map.getCenter();
         const zoom = map.getZoom();
-        window.location.hash = `#${zoom.toFixed(2)}/${lng.toFixed(4)}/${lat.toFixed(4)}`;
+        window.location.hash = `#${zoom.toFixed(2)}/${lat.toFixed(4)}/${lng.toFixed(4)}`;
       });
     </script>
   </body>

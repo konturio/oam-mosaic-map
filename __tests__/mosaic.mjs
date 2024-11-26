@@ -176,6 +176,12 @@ test.skip("mosaic(14, 9485, 5610) and 2 parent tiles", async () => {
     requestCachedMosaic512px(12, 2371, 1402),
   ]);
 
+  if (process.env.UPDATE_SNAPSHOTS) {
+    fs.writeFileSync("./__tests__/mosaic@2x-14-9485-5610.png", tile.image.buffer);
+    fs.writeFileSync("./__tests__/mosaic@2x-13-4742-2805.png", parentTile.image.buffer);
+    fs.writeFileSync("./__tests__/mosaic@2x-12-2371-1402.png", parentParentTile.image.buffer);
+  }
+
   expect(
     compareTilesPixelmatch(
       fs.readFileSync("./__tests__/mosaic@2x-14-9485-5610.png"),
@@ -229,6 +235,10 @@ test("mosaic256px(14, 9485, 5610)", async () => {
 
   const tile = await requestCachedMosaic256px(15, 18970, 11220);
 
+  if (process.env.UPDATE_SNAPSHOTS) {
+    fs.writeFileSync("./__tests__/mosaic@1x-15-18970-11220.png", tile.image.buffer);
+  }
+
   expect(
     compareTilesPixelmatch(
       fs.readFileSync("./__tests__/mosaic@1x-15-18970-11220.png"),
@@ -262,6 +272,11 @@ test("mosaic(11, 1233, 637)", async () => {
   expect(metadataRequestQueue.size).toBe(0);
 
   const expected = fs.readFileSync("./__tests__/mosaic@2x-11-1233-637.png");
+
+  if (process.env.UPDATE_SNAPSHOTS) {
+    fs.writeFileSync("./__tests__/mosaic@2x-11-1233-637.png", tile.image.buffer);
+  }
+
   expect(compareTilesPixelmatch(expected, tile.image.buffer, 512)).toBe(0);
 });
 

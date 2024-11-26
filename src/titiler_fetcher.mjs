@@ -12,9 +12,13 @@ const TITILER_BASE_URL = process.env.TITILER_BASE_URL;
 const tileRequestQueue = new PQueue({ concurrency: numCPUs });
 const activeTileRequests = new Map();
 
+const TILE_FETCH_TIMEOUT_MS =
+  Number.parseInt(process.env.TILE_FETCH_TIMEOUT_MS, 10) || 1000 * 60 * 1; // 1 minute default
+
 async function fetchTile(url) {
   try {
     const responsePromise = got(url, {
+      timeout: { request: TILE_FETCH_TIMEOUT_MS },
       throwHttpErrors: true,
     });
 
@@ -34,6 +38,8 @@ async function fetchTile(url) {
   }
 }
 
+const FETCH_QUEUE_TTL_MS = Number.parseInt(process.env.FETCH_QUEUE_TTL_MS, 10) || 1000 * 60 * 10; // 10 minutes default
+
 async function enqueueTileFetching(tileUrl, z, x, y) {
   const url = tileUrl.replace("{z}", z).replace("{x}", x).replace("{y}", y);
   if (activeTileRequests.get(url)) {
@@ -41,7 +47,21 @@ async function enqueueTileFetching(tileUrl, z, x, y) {
   }
 
   const request = tileRequestQueue
-    .add(() => fetchTile(url), { priority: z })
+    .add(() => fetchTile(url), { priority: Math.pow(2, z), timeout: FETCH_QUEUE_TTL_MS })
+    .catch((error) => {
+      const logContext = {
+        url,
+        zoomLevel: z,
+        errorType: error.name,
+        errorMessage: error.message,
+        timeout: FETCH_QUEUE_TTL_MS
+      };
+      if (error.name === "TimeoutError") {
+        console.error('Tile request timeout', logContext);
+      } else {
+        console.error('Tile request failed', logContext);
+      }
+    })
     .finally(() => {
       activeTileRequests.delete(url);
     });
@@ -62,7 +82,7 @@ async function fetchTileMetadata(uuid) {
     const metadata = await got(url.href).json();
     return metadata;
   } catch (err) {
-    if (err.response && (err.response.statusCode === 404 || err.response.statusCode === 500)) {
+    if ([404, 500].includes(err?.response?.statusCode)) {
       return null;
     } else {
       throw err;

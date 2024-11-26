@@ -171,10 +171,11 @@ async function mosaic512px(z, x, y, filters = {}) {
   const metadataByUuid = {};
   await Promise.all(
     rows.map(async (row) => {
-      metadataByUuid[row.uuid] = await getGeotiffMetadata(row.uuid);
+      if (row?.uuid) {
+        metadataByUuid[row.uuid] = await getGeotiffMetadata(row.uuid);
+      }
     })
   );
-
   const tilePromises = [];
   if (z < 9) {
     for (const row of rows) {
@@ -224,7 +225,14 @@ async function mosaic512px(z, x, y, filters = {}) {
     .map((tile, index) => ({
       tile,
       meta: metadataByUuid[rows[index].uuid],
-    }));
+    }))
+    .filter(({ meta, tile }, index) => {
+      if (!meta) {
+        console.warn(`Null metadata found for tile at index ${index}, skipping...`);
+        return false;
+      }
+      return true;
+    });
 
   // Sort tiles based on the criteria
   filteredTiles.sort((a, b) => {
