@@ -138,3 +138,17 @@ const levels = {
 | `DB_DISABLE_SSL`        | Disable SSL for PostgreSQL connection   | `false`         |
 | `TILE_FETCH_TIMEOUT_MS` | Tile fetch timeout in milliseconds      | `60000`         |
 | `FETCH_QUEUE_TTL_MS`    | Fetch promise queue TTL in milliseconds | `600000`        |
+
+## Tests
+
+To run tests:
+
+```bash
+npm test
+```
+
+To update snapshots:
+
+```bash
+UPDATE_SNAPSHOTS=1 npm test
+```
