@@ -136,8 +136,8 @@ const levels = {
 | `LOG_LEVEL`             | Logging level                           |                 |
 | `DB_POOL_SIZE`          | Size of the PostgreSQL connection pool  | `16`            |
 | `DB_DISABLE_SSL`        | Disable SSL for PostgreSQL connection   | `false`         |
-| `TILE_FETCH_TIMEOUT_MS` | Tile fetch timeout in milliseconds      | `60000`         |
-| `FETCH_QUEUE_TTL_MS`    | Fetch promise queue TTL in milliseconds | `600000`        |
+| `TILE_FETCH_TIMEOUT_MS` | Maximum time to wait for tile fetch (ms). Requests exceeding this timeout will fail with a timeout error. | `60000`         |
+| `FETCH_QUEUE_TTL_MS`    | Time to keep fetch promises in memory (ms). Older promises are removed to prevent memory leaks. | `600000`        |
 
 ## Tests
 
