@@ -37,8 +37,9 @@ async function cacheInit() {
   }
 }
 
-function cachePurgeMosaic() {
-  return fs.promises.rmdir(`${TILES_CACHE_DIR_PATH}/__mosaic__`);
+async function cachePurgeMosaic() {
+  await fs.promises.rmdir(`${TILES_CACHE_DIR_PATH}/__mosaic__`, { recursive: true });
+  await fs.promises.rmdir(`${TILES_CACHE_DIR_PATH}/__mosaic256__`, { recursive: true });
 }
 
 function mosaicTilesIterable() {
