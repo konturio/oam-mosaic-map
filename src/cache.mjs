@@ -38,8 +38,20 @@ async function cacheInit() {
 }
 
 async function cachePurgeMosaic() {
-  await fs.promises.rmdir(`${TILES_CACHE_DIR_PATH}/__mosaic__`, { recursive: true });
-  await fs.promises.rmdir(`${TILES_CACHE_DIR_PATH}/__mosaic256__`, { recursive: true });
+  try {
+    await Promise.all([
+      fs.promises.rmdir(`${TILES_CACHE_DIR_PATH}/__mosaic__`, { recursive: true }),
+      fs.promises.rmdir(`${TILES_CACHE_DIR_PATH}/__mosaic256__`, { recursive: true })
+    ]);
+    // Recreate directories to maintain consistency with cacheInit
+    await Promise.all([
+      fs.promises.mkdir(`${TILES_CACHE_DIR_PATH}/__mosaic__`, { recursive: true }),
+      fs.promises.mkdir(`${TILES_CACHE_DIR_PATH}/__mosaic256__`, { recursive: true })
+    ]);
+  } catch (error) {
+    throw new Error(`Failed to purge mosaic cache: ${error.message}`);
+  }
+}
 }
 
 function mosaicTilesIterable() {
