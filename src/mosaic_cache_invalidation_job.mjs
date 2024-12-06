@@ -56,6 +56,7 @@ const MAX_SET_SIZE = 1_000_000;
 
 async function invalidateMosaicCache() {
   const cacheInfo = JSON.parse((await cacheGet("__info__.json")).toString());
+  console.log("🚀 ~ invalidateMosaicCache ~ cacheInfo:", cacheInfo);
   const lastUpdated = new Date(cacheInfo.last_updated);
 
   logger.debug("Mosaic cache invalidation started");
