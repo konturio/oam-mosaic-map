@@ -3,7 +3,7 @@ import PQueue from "p-queue";
 import os from "node:os";
 
 // Getting the number of cores
-const numCPUs = os.cpus().length;
+const numCPUs = process.env.NUM_CPUS ? parseInt(process.env.NUM_CPUS, 10) : os.cpus().length;
 
 console.log("numCPUs:", numCPUs);
 
@@ -47,19 +47,19 @@ async function enqueueTileFetching(tileUrl, z, x, y) {
   }
 
   const request = tileRequestQueue
-    .add(() => fetchTile(url), { priority: Math.pow(2, z), timeout: FETCH_QUEUE_TTL_MS })
+    .add(() => fetchTile(url), { priority: z, timeout: FETCH_QUEUE_TTL_MS })
     .catch((error) => {
       const logContext = {
         url,
         zoomLevel: z,
         errorType: error.name,
         errorMessage: error.message,
-        timeout: FETCH_QUEUE_TTL_MS
+        timeout: FETCH_QUEUE_TTL_MS,
       };
       if (error.name === "TimeoutError") {
-        console.error('Tile request timeout', logContext);
+        console.error("Tile request timeout", logContext);
       } else {
-        console.error('Tile request failed', logContext);
+        console.error("Tile request failed", logContext);
       }
     })
     .finally(() => {
