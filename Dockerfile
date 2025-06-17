@@ -7,4 +7,4 @@ COPY . .
 
 EXPOSE 8080
 
-CMD [ "node", "--max-old-space-size=4096", "src/main.mjs" ]
+CMD [ "node", "--max-old-space-size=8192", "src/main.mjs" ]
