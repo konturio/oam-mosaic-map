@@ -104,17 +104,22 @@ export function buildParametrizedFiltersQuery(OAM_LAYER_ID, z, x, y, filters = {
   const sqlQuery = `with oam_meta as (
     select
       feature_id,
-      (properties->>'gsd')::real as resolution_in_meters, 
+      (properties->>'gsd')::real as resolution_in_meters,
       (properties->>'acquisition_end')::timestamptz as acquisition_end,
-      properties->>'uuid' as uuid, 
+      (properties->>'uploaded_at')::timestamptz as uploaded_at,
+      properties->>'uuid' as uuid,
       geom
     from public.layers_features
     where layer_id = (select id from public.layers where public_id = '${OAM_LAYER_ID}')
   )
-  select uuid, ST_AsGeoJSON(ST_Envelope(geom)) geojson
+  select uuid,
+         ST_AsGeoJSON(ST_Envelope(geom)) geojson,
+         resolution_in_meters,
+         acquisition_end,
+         uploaded_at
   from oam_meta
   where ${sqlWhereClause}
-  order by resolution_in_meters desc nulls last, acquisition_end desc nulls last, feature_id asc`;
+  order by feature_id asc`;
 
   return { sqlQuery, sqlQueryParams, queryTag: tags.join("_") };
 }
