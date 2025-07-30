@@ -7,9 +7,32 @@ import { getGeotiffMetadata } from "./metadata.mjs";
 import { getTileCover } from "./tile_cover.mjs";
 import { keyFromS3Url } from "./key_from_s3_url.mjs";
 import { buildParametrizedFiltersQuery } from "./filters.mjs";
-import { blendTiles } from "./tileBlender.mjs";
+import { blendTiles, blendBackTiles } from "./tileBlender.mjs";
 
 const OAM_LAYER_ID = process.env.OAM_LAYER_ID || "openaerialmap";
+
+const PREFERRED_PALETTE_RGB = [
+  [14, 61, 66],
+  [219, 210, 95],
+  [73, 127, 138],
+  [173, 115, 102],
+  [140, 140, 140],
+  [69, 77, 62],
+  [112, 143, 57],
+  [174, 170, 166],
+];
+
+function tileYToLat(y, z) {
+  const n = Math.PI - (2 * Math.PI * y) / Math.pow(2, z);
+  return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+}
+
+function tilePixelSizeMeters(z, y) {
+  const lat = tileYToLat(y + 0.5, z);
+  return (
+    156543.03392 * Math.cos((lat * Math.PI) / 180) / Math.pow(2, z)
+  );
+}
 
 // ------------------------------------------------------------------------------------
 // Utility functions for cache access
@@ -259,11 +282,54 @@ async function mosaic512px(z, x, y, filters = {}) {
     });
   }
 
-  // Sort tiles by date, file size, and GSD
-  sortTiles(finalTiles);
+  const pixelSize = tilePixelSizeMeters(z, y);
+  const front = [];
+  const back = [];
+  for (const t of finalTiles) {
+    const gsd = t.meta.gsd ?? Infinity;
+    if (gsd <= pixelSize) front.push(t); else back.push(t);
+  }
 
-  // Blend all candidate tiles into a single mosaic
-  const tile = await blendFinalTiles(finalTiles, z, x, y);
+  sortFrontTiles(front, z);
+  sortBackTiles(back);
+
+  const backBuffer = back.length
+    ? await blendBackTiles(
+        back.map((b) => b.tile.image.buffer),
+        512,
+        512,
+        PREFERRED_PALETTE_RGB
+      )
+    : null;
+  const frontBuffer = front.length
+    ? await blendTiles(front.map((f) => f.tile.image.buffer), 512, 512)
+    : null;
+
+  let finalBuffer;
+  if (backBuffer && frontBuffer) {
+    finalBuffer = await sharp(backBuffer)
+      .composite([{ input: frontBuffer }])
+      .png()
+      .toBuffer();
+  } else if (frontBuffer) {
+    finalBuffer = frontBuffer;
+  } else if (backBuffer) {
+    finalBuffer = backBuffer;
+  } else {
+    finalBuffer = await sharp({
+      create: {
+        width: 512,
+        height: 512,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 },
+      },
+    })
+      .png()
+      .toBuffer();
+  }
+
+  const tile = new Tile(new TileImage(finalBuffer, "png"), z, x, y);
+  await tile.image.transformInJpegIfFullyOpaque();
   return tile;
 }
 
@@ -298,7 +364,15 @@ async function fetchRowsAndMetadata(z, x, y, filters) {
       text: sqlQuery,
       values: sqlQueryParams,
     });
-    rows = dbResponse.rows;
+    rows = dbResponse.rows.map((r) => ({
+      uuid: r.uuid,
+      geojson: r.geojson,
+      resolution_in_meters: r.resolution_in_meters
+        ? Number.parseFloat(r.resolution_in_meters)
+        : null,
+      acquisition_end: r.acquisition_end,
+      uploaded_at: r.uploaded_at,
+    }));
   } catch (error) {
     console.error("Error querying DB:", error);
     throw error;
@@ -310,7 +384,12 @@ async function fetchRowsAndMetadata(z, x, y, filters) {
   await Promise.all(
     rows.map(async (row) => {
       if (row?.uuid) {
-        metadataByUuid[row.uuid] = await getGeotiffMetadata(row.uuid);
+        const m = await getGeotiffMetadata(row.uuid);
+        metadataByUuid[row.uuid] = {
+          ...m,
+          uploaded_at: row.uploaded_at || row.acquisition_end,
+          gsd: row.resolution_in_meters,
+        };
       }
     })
   );
@@ -386,49 +465,46 @@ function mapTilesWithMetadata(rowTiles, resolvedRowTiles, metadataByUuid) {
       return;
     }
     if (!tile.empty()) {
-      finalTiles.push({ tile, meta });
+      finalTiles.push({
+        tile,
+        meta: {
+          ...meta,
+          file_size: tile.image.buffer ? tile.image.buffer.length : 0,
+        },
+      });
     }
   });
   return finalTiles;
 }
 
-/**
- * Sort tiles by:
- * 1. Uploaded date (newest first)
- * 2. File size (larger first)
- * 3. GSD (smaller is better resolution)
- * @param {{tile: Tile, meta: {uploaded_at: string|Date, file_size: number, gsd: number}}[]} finalTiles
- */
-function sortTiles(finalTiles) {
-  finalTiles.sort((a, b) => {
-    const dateA = new Date(a.meta.uploaded_at).getTime();
-    const dateB = new Date(b.meta.uploaded_at).getTime();
+function roundDateByZoom(date, z) {
+  const d = new Date(date);
+  if (z <= 4) return new Date(0); // ignore date
+  if (z <= 8) return new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  if (z <= 12) return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+  return d; // full precision for high zoom
+}
+
+function sortFrontTiles(frontTiles, z) {
+  frontTiles.sort((a, b) => {
+    const dateA = roundDateByZoom(a.meta.uploaded_at, z).getTime();
+    const dateB = roundDateByZoom(b.meta.uploaded_at, z).getTime();
+    if (dateA !== dateB) return dateB - dateA;
     const fileSizeA = a.meta.file_size;
     const fileSizeB = b.meta.file_size;
-    const gsdA = a.meta.gsd;
-    const gsdB = b.meta.gsd;
-
-    if (dateA !== dateB) return dateB - dateA; // newer first
-    if (fileSizeA !== fileSizeB) return fileSizeB - fileSizeA; // larger first
-    return gsdA - gsdB; // smaller GSD first
+    if (fileSizeA !== fileSizeB) return fileSizeB - fileSizeA;
+    const gsdA = a.meta.gsd ?? Infinity;
+    const gsdB = b.meta.gsd ?? Infinity;
+    return gsdA - gsdB;
   });
 }
 
-/**
- * Blend a set of final candidate tiles into one 512x512 tile.
- * Converts to JPEG if fully opaque.
- * @param {{tile: Tile}[]} finalTiles
- * @param {number} z
- * @param {number} x
- * @param {number} y
- * @returns {Promise<Tile>}
- */
-async function blendFinalTiles(finalTiles, z, x, y) {
-  const tileBuffers = finalTiles.map(({ tile }) => tile.image.buffer);
-  const tileBuffer = await blendTiles(tileBuffers, 512, 512);
-  const tile = new Tile(new TileImage(tileBuffer, "png"), z, x, y);
-  await tile.image.transformInJpegIfFullyOpaque();
-  return tile;
+function sortBackTiles(backTiles) {
+  backTiles.sort((a, b) => {
+    const gsdA = a.meta.gsd ?? Infinity;
+    const gsdB = b.meta.gsd ?? Infinity;
+    return gsdA - gsdB;
+  });
 }
 
 // ------------------------------------------------------------------------------------
