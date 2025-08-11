@@ -101,6 +101,17 @@ export function buildParametrizedFiltersQuery(OAM_LAYER_ID, z, x, y, filters = {
     }
   }
 
+  sqlWhereClause += `
+  and ST_Area(
+        ST_Intersection(
+          ST_Envelope(ST_Transform(geom, 3857)),
+          ST_TileEnvelope($1, $2, $3)
+        )
+      ) >= (CASE WHEN $1 < 14 THEN 4 ELSE 1 END) * POWER(
+            156543.03392804097 / POWER(2, $1),
+            2
+          )`;
+
   const sqlQuery = `with oam_meta as (
     select
       feature_id,
@@ -114,7 +125,8 @@ export function buildParametrizedFiltersQuery(OAM_LAYER_ID, z, x, y, filters = {
   select uuid, ST_AsGeoJSON(ST_Envelope(geom)) geojson
   from oam_meta
   where ${sqlWhereClause}
-  order by resolution_in_meters desc nulls last, acquisition_end desc nulls last, feature_id asc`;
+  order by resolution_in_meters desc nulls last, acquisition_end desc nulls last, feature_id asc
+  limit 100`;
 
   return { sqlQuery, sqlQueryParams, queryTag: tags.join("_") };
 }
