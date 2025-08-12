@@ -8,6 +8,7 @@ import { getTileCover } from "./tile_cover.mjs";
 import { keyFromS3Url } from "./key_from_s3_url.mjs";
 import { buildParametrizedFiltersQuery } from "./filters.mjs";
 import { blendTiles } from "./tileBlender.mjs";
+import { logger } from "./logging.mjs";
 
 const OAM_LAYER_ID = process.env.OAM_LAYER_ID || "openaerialmap";
 
@@ -66,6 +67,7 @@ function cachePutTile(tileBuffer, key, z, x, y, extension) {
  */
 async function source(key, z, x, y, meta, geojson) {
   if (z > meta.maxzoom) {
+    logger.debug("Tile above maxzoom, returning empty", { key, z, x, y, maxzoom: meta.maxzoom });
     return Tile.createEmpty(z, x, y);
   }
 
@@ -78,16 +80,41 @@ async function source(key, z, x, y, meta, geojson) {
   // Check if tile intersects with image footprint
   const tileCover = getTileCover(geojson, z);
   const intersects = tileCover.some((pos) => pos[0] === x && pos[1] === y && pos[2] === z);
+  logger.debug("Tile intersection check", {
+    key,
+    z,
+    x,
+    y,
+    intersects,
+    tileCoverSize: tileCover.length,
+  });
   if (!intersects) {
     // Cache null for faster subsequent checks
     await cachePutTile(null, key, z, x, y, "png");
+    logger.debug("Tile does not intersect image footprint, returning empty", { key, z, x, y });
     return Tile.createEmpty(z, x, y);
   }
 
   // If tile is within the image's zoom range, fetch directly.
   if (z >= meta.minzoom && z <= meta.maxzoom) {
+    logger.debug("Fetching tile from TiTiler (within min/max zoom)", {
+      key,
+      z,
+      x,
+      y,
+      minzoom: meta.minzoom,
+      maxzoom: meta.maxzoom,
+    });
     tileBuffer = await enqueueTileFetching(meta.tileUrl, z, x, y);
   } else if (z < meta.maxzoom) {
+    logger.debug("Constructing parent tile from children (below minzoom)", {
+      key,
+      z,
+      x,
+      y,
+      minzoom: meta.minzoom,
+      maxzoom: meta.maxzoom,
+    });
     // If the zoom is below maxzoom but not directly available,
     // construct it from children tiles at the next zoom level.
     const children = await Promise.all([
@@ -101,6 +128,14 @@ async function source(key, z, x, y, meta, geojson) {
     tileBuffer = parentTile.image.buffer;
   } else {
     // If the tile can't be constructed or fetched, return empty.
+    logger.debug("Tile cannot be constructed or fetched, returning empty", {
+      key,
+      z,
+      x,
+      y,
+      minzoom: meta.minzoom,
+      maxzoom: meta.maxzoom,
+    });
     return Tile.createEmpty(z, x, y);
   }
 

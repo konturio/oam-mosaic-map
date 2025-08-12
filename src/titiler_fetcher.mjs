@@ -1,11 +1,12 @@
 import got from "got";
 import PQueue from "p-queue";
 import os from "node:os";
+import { logger } from "./logging.mjs";
 
 // Getting the number of cores
 const numCPUs = process.env.NUM_CPUS ? parseInt(process.env.NUM_CPUS, 10) : os.cpus().length;
 
-console.log("numCPUs:", numCPUs);
+logger.info("numCPUs:", { numCPUs });
 
 const TITILER_BASE_URL = process.env.TITILER_BASE_URL;
 
@@ -17,6 +18,7 @@ const TILE_FETCH_TIMEOUT_MS =
 
 async function fetchTile(url) {
   try {
+    logger.debug("Requesting tile from TiTiler", { url });
     const responsePromise = got(url, {
       timeout: { request: TILE_FETCH_TIMEOUT_MS },
       throwHttpErrors: true,
@@ -46,6 +48,8 @@ async function enqueueTileFetching(tileUrl, z, x, y) {
     return activeTileRequests.get(url);
   }
 
+  logger.debug("Enqueue tile request to TiTiler", { url, z, x, y });
+
   const request = tileRequestQueue
     .add(() => fetchTile(url), { priority: z, timeout: FETCH_QUEUE_TTL_MS })
     .catch((error) => {
@@ -54,12 +58,13 @@ async function enqueueTileFetching(tileUrl, z, x, y) {
         zoomLevel: z,
         errorType: error.name,
         errorMessage: error.message,
+        statusCode: error?.response?.statusCode,
         timeout: FETCH_QUEUE_TTL_MS,
       };
       if (error.name === "TimeoutError") {
-        console.error("Tile request timeout", logContext);
+        logger.error("Tile request timeout", logContext);
       } else {
-        console.error("Tile request failed", logContext);
+        logger.error("Tile request failed", logContext);
       }
     })
     .finally(() => {
@@ -76,12 +81,21 @@ const activeMetaRequests = new Map();
 const metadataRequestQueue = new PQueue({ concurrency: numCPUs });
 
 async function fetchTileMetadata(uuid) {
+  let infoUrl;
   try {
-    const url = new URL(`${TITILER_BASE_URL}/cog/info`);
-    url.searchParams.append("url", uuid);
-    const metadata = await got(url.href).json();
+    infoUrl = new URL(`${TITILER_BASE_URL}/cog/info`);
+    infoUrl.searchParams.append("url", uuid);
+    logger.debug("Requesting metadata from TiTiler", { url: infoUrl.href, uuid });
+    const metadata = await got(infoUrl.href).json();
     return metadata;
   } catch (err) {
+    logger.error("Metadata request failed", {
+      url: infoUrl?.href,
+      uuid,
+      errorType: err.name,
+      errorMessage: err.message,
+      statusCode: err?.response?.statusCode,
+    });
     if ([404, 500].includes(err?.response?.statusCode)) {
       return null;
     } else {

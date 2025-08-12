@@ -36,6 +36,12 @@ async function getGeotiffMetadata(uuid) {
     return null;
   }
 
+  // Ensure zooms are numeric; fallback only if missing/NaN
+  const parsedMin = Number(metadata.minzoom);
+  const parsedMax = Number(metadata.maxzoom);
+  const resolvedMinzoom = Number.isFinite(parsedMin) ? parsedMin : 0;
+  const resolvedMaxzoom = Number.isFinite(parsedMax) ? parsedMax : 24;
+
   const tileUrl = new URL(
     `${process.env.TITILER_BASE_URL}/cog/tiles/WebMercatorQuad/___z___/___x___/___y___@2x`
   );
@@ -43,14 +49,21 @@ async function getGeotiffMetadata(uuid) {
   for (let i = 0; i < metadata.band_metadata.length; ++i) {
     if (metadata.colorinterp[i] != "undefined") {
       const [idx] = metadata.band_metadata[i];
-      tileUrl.searchParams.append("bidx", idx);
+      tileUrl.searchParams.append("bidx", idx.replaceAll("b", ""));
     }
   }
   tileUrl.searchParams.append("nodata", "0");
 
+  logger.debug("Constructed TiTiler tile URL template", {
+    url: tileUrl.href,
+    uuid,
+    minzoom: resolvedMinzoom,
+    maxzoom: resolvedMaxzoom,
+  });
+
   return {
-    minzoom: metadata.minzoom,
-    maxzoom: metadata.maxzoom,
+    minzoom: resolvedMinzoom,
+    maxzoom: resolvedMaxzoom,
     tileUrl: tileUrl.href
       .replace("___z___", "{z}")
       .replace("___x___", "{x}")

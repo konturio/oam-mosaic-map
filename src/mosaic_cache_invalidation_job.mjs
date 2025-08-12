@@ -43,9 +43,7 @@ async function invalidateImage(geojson, maxzoom, presentMosaicCacheKeys) {
       staleCacheKeys.push(`__mosaic256__/${z + 1}/${x * 2 + 1}/${y * 2 + 1}.jpg`);
 
       for (const cacheKey of staleCacheKeys) {
-        if (presentMosaicCacheKeys.has(cacheKey)) {
-          await cacheDelete(cacheKey);
-        }
+        await cacheDelete(cacheKey);
       }
     }
   }

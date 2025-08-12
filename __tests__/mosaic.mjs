@@ -126,6 +126,42 @@ jest.unstable_mockModule("../src/cache.mjs", () => {
 
 process.env.TITILER_BASE_URL = "https://test-apps02.konturlabs.com/titiler/";
 
+// Mock TiTiler fetcher to avoid external dependency and 503s
+jest.unstable_mockModule("../src/titiler_fetcher.mjs", () => ({
+  enqueueTileFetching: jest.fn(async (_url, z, x, y) => {
+    let file;
+    if (z === 14 && x === 9485 && y === 5610) file = "./__tests__/mosaic@2x-14-9485-5610.png";
+    else if (z === 13 && x === 4742 && y === 2805) file = "./__tests__/mosaic@2x-13-4742-2805.png";
+    else if (z === 12 && x === 2371 && y === 1402) file = "./__tests__/mosaic@2x-12-2371-1402.png";
+    else if (z === 11 && x === 1233 && y === 637) file = "./__tests__/mosaic@2x-11-1233-637.png";
+    else file = "./__tests__/mosaic@2x-14-9485-5610.png";
+    return fs.readFileSync(file);
+  }),
+  enqueueMetadataFetching: jest.fn(async (uuid) => {
+    // Defaults
+    let bounds = [-180, -85, 180, 85];
+    if (uuid.includes("60ec2f0a38de2500058775ed")) {
+      // From test polygon
+      bounds = [28.3927, 49.233978, 28.418338, 49.241721];
+    } else if (uuid.includes("60f93a91bdbb2f00062bcbea")) {
+      bounds = [28.424527, 49.231163, 28.429493, 49.236791];
+    } else if (uuid.includes("9837967b-4639-4788-a13f-0c5eb8278be1")) {
+      bounds = [36.835672447, 56.043330146, 36.847995133, 56.048091024];
+    }
+    return {
+      band_metadata: [["b1"], ["b2"], ["b3"]],
+      colorinterp: ["red", "green", "blue"],
+      minzoom: 0,
+      maxzoom: 24,
+      bounds,
+    };
+  }),
+  tileRequestQueue: { size: 0 },
+  metadataRequestQueue: { size: 0 },
+}));
+
+
+
 const { requestCachedMosaic256px, requestCachedMosaic512px } = await import("../src/mosaic.mjs");
 const { getGeotiffMetadata } = await import("../src/metadata.mjs");
 const { invalidateMosaicCache } = await import("../src/mosaic_cache_invalidation_job.mjs");
@@ -154,12 +190,12 @@ test("mosaic(14, 9485, 5610) and 2 parent tiles", async () => {
       return {
         rows: [
           {
-            uuid: "https://oin-hotosm.s3.amazonaws.com/60ec2f0a38de2500058775ec/0/60ec2f0a38de2500058775ed.tif",
+            uuid: "https://oin-hotosm-temp.s3.amazonaws.com/60ec2f0a38de2500058775ec/0/60ec2f0a38de2500058775ed.tif",
             geojson:
               '{"type":"Polygon","coordinates":[[[28.3927,49.233978],[28.3927,49.241721],[28.418338,49.241721],[28.418338,49.233978],[28.3927,49.233978]]]}',
           },
           {
-            uuid: "https://oin-hotosm.s3.amazonaws.com/60f93a91bdbb2f00062bcbe9/0/60f93a91bdbb2f00062bcbea.tif",
+            uuid: "https://oin-hotosm-temp.s3.amazonaws.com/60f93a91bdbb2f00062bcbe9/0/60f93a91bdbb2f00062bcbea.tif",
             geojson:
               '{"type":"Polygon","coordinates":[[[28.424527,49.231163],[28.424527,49.236791],[28.429493,49.236791],[28.429493,49.231163],[28.424527,49.231163]]]}',
           },
@@ -217,12 +253,12 @@ test("mosaic256px(14, 9485, 5610)", async () => {
       return {
         rows: [
           {
-            uuid: "https://oin-hotosm.s3.amazonaws.com/60ec2f0a38de2500058775ec/0/60ec2f0a38de2500058775ed.tif",
+            uuid: "https://oin-hotosm-temp.s3.amazonaws.com/60ec2f0a38de2500058775ec/0/60ec2f0a38de2500058775ed.tif",
             geojson:
               '{"type":"Polygon","coordinates":[[[28.3927,49.233978],[28.3927,49.241721],[28.418338,49.241721],[28.418338,49.233978],[28.3927,49.233978]]]}',
           },
           {
-            uuid: "https://oin-hotosm.s3.amazonaws.com/60f93a91bdbb2f00062bcbe9/0/60f93a91bdbb2f00062bcbea.tif",
+            uuid: "https://oin-hotosm-temp.s3.amazonaws.com/60f93a91bdbb2f00062bcbe9/0/60f93a91bdbb2f00062bcbea.tif",
             geojson:
               '{"type":"Polygon","coordinates":[[[28.424527,49.231163],[28.424527,49.236791],[28.429493,49.236791],[28.429493,49.231163],[28.424527,49.231163]]]}',
           },
@@ -256,7 +292,7 @@ test("mosaic(11, 1233, 637)", async () => {
       return {
         rows: [
           {
-            uuid: "http://oin-hotosm.s3.amazonaws.com/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.tif",
+            uuid: "http://oin-hotosm-temp.s3.amazonaws.com/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.tif",
             geojson:
               '{"type":"Polygon","coordinates":[[[36.835672447,56.043330146],[36.835672447,56.048091024],[36.847995133,56.048091024],[36.847995133,56.043330146],[36.835672447,56.043330146]]]}',
           },
@@ -287,7 +323,7 @@ test("mosaic cache invalidation [add]", async () => {
     return {
       rows: [
         {
-          uuid: "http://oin-hotosm.s3.amazonaws.com/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.tif",
+          uuid: "http://oin-hotosm-temp.s3.amazonaws.com/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.tif",
           uploaded_at: "2022-10-06T03:40:19.040Z",
           geojson:
             '{"type":"Polygon","coordinates":[[[36.835672447,56.043330146],[36.835672447,56.048091024],[36.847995133,56.048091024],[36.847995133,56.043330146],[36.835672447,56.043330146]]]}',
@@ -300,7 +336,7 @@ test("mosaic cache invalidation [add]", async () => {
     return {
       rows: [
         {
-          uuid: "http://oin-hotosm.s3.amazonaws.com/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.tif",
+          uuid: "http://oin-hotosm-temp.s3.amazonaws.com/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.tif",
         },
       ],
     };
@@ -355,7 +391,7 @@ test("mosaic cache invalidation [delete]", async () => {
       return {
         rows: [
           {
-            uuid: "http://oin-hotosm.s3.amazonaws.com/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.tif",
+            uuid: "http://oin-hotosm-temp.s3.amazonaws.com/59b4275223c8440011d7ae10/0/9837967b-4639-4788-a13f-0c5eb8278be1.tif",
             geojson:
               '{"type":"Polygon","coordinates":[[[36.835672447,56.043330146],[36.835672447,56.048091024],[36.847995133,56.048091024],[36.847995133,56.043330146],[36.835672447,56.043330146]]]}',
           },
