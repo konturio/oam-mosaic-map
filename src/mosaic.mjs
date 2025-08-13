@@ -11,6 +11,14 @@ import { blendTiles } from "./tileBlender.mjs";
 import { logger } from "./logging.mjs";
 
 const OAM_LAYER_ID = process.env.OAM_LAYER_ID || "openaerialmap";
+const CHILD_ASSEMBLY_MAX_ZOOM = Number.parseInt(process.env.CHILD_ASSEMBLY_MAX_ZOOM || "0", 10);
+const CHILD_ASSEMBLY_MAX_DEPTH = Number.parseInt(process.env.CHILD_ASSEMBLY_MAX_DEPTH || "0", 10);
+const isChildAssemblyEnabledAtZoom = (z) => Number.isFinite(CHILD_ASSEMBLY_MAX_ZOOM) && CHILD_ASSEMBLY_MAX_ZOOM > 0 && z < CHILD_ASSEMBLY_MAX_ZOOM;
+const canAssembleChildren = (z, depth) =>
+  isChildAssemblyEnabledAtZoom(z) &&
+  Number.isFinite(CHILD_ASSEMBLY_MAX_DEPTH) &&
+  CHILD_ASSEMBLY_MAX_DEPTH > 0 &&
+  depth < CHILD_ASSEMBLY_MAX_DEPTH;
 
 // ------------------------------------------------------------------------------------
 // Utility functions for cache access
@@ -65,7 +73,7 @@ function cachePutTile(tileBuffer, key, z, x, y, extension) {
  * @param {object} geojson - GeoJSON footprint of the image.
  * @returns {Promise<Tile>}
  */
-async function source(key, z, x, y, meta, geojson) {
+async function source(key, z, x, y, meta, geojson, recursionDepth = 0) {
   if (z > meta.maxzoom) {
     logger.debug("Tile above maxzoom, returning empty", { key, z, x, y, maxzoom: meta.maxzoom });
     return Tile.createEmpty(z, x, y);
@@ -106,7 +114,7 @@ async function source(key, z, x, y, meta, geojson) {
       maxzoom: meta.maxzoom,
     });
     tileBuffer = await enqueueTileFetching(meta.tileUrl, z, x, y);
-  } else if (z < meta.maxzoom) {
+  } else if (canAssembleChildren(z, recursionDepth) && z < meta.maxzoom) {
     logger.debug("Constructing parent tile from children (below minzoom)", {
       key,
       z,
@@ -117,11 +125,12 @@ async function source(key, z, x, y, meta, geojson) {
     });
     // If the zoom is below maxzoom but not directly available,
     // construct it from children tiles at the next zoom level.
+    const nextDepth = recursionDepth + 1;
     const children = await Promise.all([
-      source(key, z + 1, x * 2, y * 2, meta, geojson),
-      source(key, z + 1, x * 2 + 1, y * 2, meta, geojson),
-      source(key, z + 1, x * 2, y * 2 + 1, meta, geojson),
-      source(key, z + 1, x * 2 + 1, y * 2 + 1, meta, geojson),
+      source(key, z + 1, x * 2, y * 2, meta, geojson, nextDepth),
+      source(key, z + 1, x * 2 + 1, y * 2, meta, geojson, nextDepth),
+      source(key, z + 1, x * 2, y * 2 + 1, meta, geojson, nextDepth),
+      source(key, z + 1, x * 2 + 1, y * 2 + 1, meta, geojson, nextDepth),
     ]);
 
     const parentTile = await constructParentTileFromChildren(children, z, x, y);
@@ -174,14 +183,14 @@ async function cachedMosaic256px(z, x, y) {
  * @param {number} y
  * @returns {Promise<Tile>}
  */
-async function cachedMosaic512px(z, x, y) {
+async function cachedMosaic512px(z, x, y, assemblyDepth = 0) {
   let tileBuffer = await cacheGetTile("__mosaic__", z, x, y, "png");
   if (tileBuffer) return new Tile(new TileImage(tileBuffer, "png"), z, x, y);
 
   tileBuffer = await cacheGetTile("__mosaic__", z, x, y, "jpg");
   if (tileBuffer) return new Tile(new TileImage(tileBuffer, "jpg"), z, x, y);
 
-  const mosaicTile = await mosaic512px(z, x, y);
+  const mosaicTile = await mosaic512px(z, x, y, {}, assemblyDepth);
   await cachePutTile(mosaicTile.image.buffer, "__mosaic__", z, x, y, mosaicTile.image.extension);
   return mosaicTile;
 }
@@ -196,13 +205,13 @@ const activeMosaicRequests = new Map();
  * @param {number} y
  * @returns {Promise<Tile>}
  */
-function requestCachedMosaic512px(z, x, y) {
+function requestCachedMosaic512px(z, x, y, assemblyDepth = 0) {
   const key = JSON.stringify([z, x, y]);
   if (activeMosaicRequests.has(key)) {
     return activeMosaicRequests.get(key);
   }
 
-  const request = cachedMosaic512px(z, x, y).finally(() => activeMosaicRequests.delete(key));
+  const request = cachedMosaic512px(z, x, y, assemblyDepth).finally(() => activeMosaicRequests.delete(key));
   activeMosaicRequests.set(key, request);
   return request;
 }
@@ -234,17 +243,21 @@ function requestCachedMosaic256px(z, x, y) {
  * @returns {Promise<Tile>}
  */
 async function mosaic256px(z, x, y, filters = {}) {
-  const request512pxFn = Object.keys(filters).length > 0 ? mosaic512px : requestCachedMosaic512px;
   let tile256;
+  const hasFilters = Object.keys(filters).length > 0;
   if (z % 2 === 0) {
-    const tile512 = await request512pxFn(z, x, y, filters);
+    const tile512 = hasFilters
+      ? await mosaic512px(z, x, y, filters)
+      : await requestCachedMosaic512px(z, x, y);
     tile256 = await tile512.scale(0.5);
   } else {
-    const parent512 = await request512pxFn(z - 1, x >> 1, y >> 1, filters);
+    const parent512 = hasFilters
+      ? await mosaic512px(z - 1, x >> 1, y >> 1, filters)
+      : await requestCachedMosaic512px(z - 1, x >> 1, y >> 1);
     tile256 = await parent512.extractChild(z, x, y);
   }
 
-  tile256.image.transformInJpegIfFullyOpaque();
+  await tile256.transformInJpegIfFullyOpaque();
   return tile256;
 }
 
@@ -260,7 +273,7 @@ async function mosaic256px(z, x, y, filters = {}) {
  * @param {object} filters
  * @returns {Promise<Tile>}
  */
-async function mosaic512px(z, x, y, filters = {}) {
+async function mosaic512px(z, x, y, filters = {}, assemblyDepth = 0) {
   const { rows, metadataByUuid } = await fetchRowsAndMetadata(z, x, y, filters);
 
   // Build the list of tile promises from the rows
@@ -270,7 +283,8 @@ async function mosaic512px(z, x, y, filters = {}) {
     y,
     rows,
     metadataByUuid,
-    filters
+    filters,
+    assemblyDepth
   );
 
   // Resolve all tile promises
@@ -363,16 +377,16 @@ async function fetchRowsAndMetadata(z, x, y, filters) {
  * @param {object} filters
  * @returns {{rowTiles: {row: object, promise: Promise<Tile>}[], parentTilePromise: Promise<Tile>|null}}
  */
-function buildRowTilePromises(z, x, y, rows, metadataByUuid, filters) {
+function buildRowTilePromises(z, x, y, rows, metadataByUuid, filters, assemblyDepth = 0) {
   const rowTiles = [];
   let parentTilePromise = null;
-  const request512pxFn = Object.keys(filters).length > 0 ? mosaic512px : requestCachedMosaic512px;
+  const hasFilters = Object.keys(filters).length > 0;
 
-  if (z < 9) {
+  if (canAssembleChildren(z, assemblyDepth)) {
     // For low zoom levels, consider only images that can contribute at low zoom.
     for (const row of rows) {
       const meta = metadataByUuid[row.uuid];
-      if (meta && meta.maxzoom < 9) {
+      if (meta && meta.maxzoom < CHILD_ASSEMBLY_MAX_ZOOM) {
         const key = keyFromS3Url(row.uuid);
         const geojson = JSON.parse(row.geojson);
         rowTiles.push({ row, promise: source(key, z, x, y, meta, geojson) });
@@ -381,11 +395,20 @@ function buildRowTilePromises(z, x, y, rows, metadataByUuid, filters) {
 
     // Build a parent tile from 4 children tiles at the next zoom level
     parentTilePromise = (async () => {
+      const nextDepth = assemblyDepth + 1;
       const children = await Promise.all([
-        request512pxFn(z + 1, x * 2, y * 2, filters),
-        request512pxFn(z + 1, x * 2 + 1, y * 2, filters),
-        request512pxFn(z + 1, x * 2, y * 2 + 1, filters),
-        request512pxFn(z + 1, x * 2 + 1, y * 2 + 1, filters),
+        hasFilters
+          ? mosaic512px(z + 1, x * 2, y * 2, filters, nextDepth)
+          : requestCachedMosaic512px(z + 1, x * 2, y * 2, nextDepth),
+        hasFilters
+          ? mosaic512px(z + 1, x * 2 + 1, y * 2, filters, nextDepth)
+          : requestCachedMosaic512px(z + 1, x * 2 + 1, y * 2, nextDepth),
+        hasFilters
+          ? mosaic512px(z + 1, x * 2, y * 2 + 1, filters, nextDepth)
+          : requestCachedMosaic512px(z + 1, x * 2, y * 2 + 1, nextDepth),
+        hasFilters
+          ? mosaic512px(z + 1, x * 2 + 1, y * 2 + 1, filters, nextDepth)
+          : requestCachedMosaic512px(z + 1, x * 2 + 1, y * 2 + 1, nextDepth),
       ]);
       return constructParentTileFromChildren(children, z, x, y);
     })();
