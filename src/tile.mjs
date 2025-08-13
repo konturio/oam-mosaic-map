@@ -101,7 +101,7 @@ class Tile {
     }
 
     if (this.image.empty()) {
-      return this.image;
+      return Tile.createEmpty(z, x, y);
     }
 
     const image = await this.image.extractChild(x % 2, y % 2);

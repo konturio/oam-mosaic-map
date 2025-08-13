@@ -138,6 +138,8 @@ const levels = {
 | `DB_DISABLE_SSL`        | Disable SSL for PostgreSQL connection                                                                     | `false`         |
 | `TILE_FETCH_TIMEOUT_MS` | Maximum time to wait for tile fetch (ms). Requests exceeding this timeout will fail with a timeout error. | `60000`         |
 | `FETCH_QUEUE_TTL_MS`    | Time to keep fetch promises in memory (ms). Older promises are removed to prevent memory leaks.           | `600000`        |
+| `CHILD_ASSEMBLY_MAX_ZOOM` | Max zoom at which assembling a parent tile from its four children is allowed. If `0`, assembly is disabled. | `0`           |
+| `CHILD_ASSEMBLY_MAX_DEPTH` | Max recursion depth for child assembly. If `0`, assembly is disabled.                                     | `0`           |
 
 ## Tests
 
