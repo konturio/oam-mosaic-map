@@ -49,6 +49,54 @@ async function invalidateImage(geojson, maxzoom, presentMosaicCacheKeys) {
   }
 }
 
+function parseMosaicCacheKey(cacheKey) {
+  // Formats:
+  // __mosaic__/z/x/y.png|jpg
+  // __mosaic256__/z/x/y.png|jpg
+  const match = cacheKey.match(/^(__mosaic__|__mosaic256__)\/(\d+)\/(\d+)\/(\d+)\.(png|jpg)$/);
+  if (!match) return null;
+  const [, directory, zStr, xStr, yStr, extension] = match;
+  return {
+    directory,
+    z: Number(zStr),
+    x: Number(xStr),
+    y: Number(yStr),
+    extension,
+  };
+}
+
+async function invalidateImageUsingPresentKeys(geojson, presentMosaicCacheKeys) {
+  // Collect unique zoom levels available in cache
+  const zoomLevels = new Set();
+  for (const key of presentMosaicCacheKeys) {
+    const parsed = parseMosaicCacheKey(key);
+    if (parsed) zoomLevels.add(parsed.z);
+  }
+
+  // Precompute tile covers per zoom
+  const zoomToCover = new Map();
+  for (const z of zoomLevels) {
+    const cover = getTileCover(geojson, z);
+    // Convert to a fast lookup Set of "x:y"
+    const xySet = new Set(cover.map(([x, y]) => `${x}:${y}`));
+    zoomToCover.set(z, xySet);
+  }
+
+  let invalidatedCount = 0;
+  for (const key of presentMosaicCacheKeys) {
+    const parsed = parseMosaicCacheKey(key);
+    if (!parsed) continue;
+    const xySet = zoomToCover.get(parsed.z);
+    if (!xySet) continue;
+    if (xySet.has(`${parsed.x}:${parsed.y}`)) {
+      await cacheDelete(key);
+      invalidatedCount += 1;
+    }
+  }
+
+  return invalidatedCount;
+}
+
 const OAM_LAYER_ID = process.env.OAM_LAYER_ID || "openaerialmap";
 const MAX_SET_SIZE = 1_000_000;
 
@@ -145,6 +193,7 @@ async function invalidateMosaicCache() {
     }
 
     let latestUploadedAt;
+    let hasInvalidatedAny = false;
     if (imagesAddedSinceLastInvalidation.length > 0) {
       latestUploadedAt = imagesAddedSinceLastInvalidation[0].uploaded_at;
       for (const row of imagesAddedSinceLastInvalidation) {
@@ -153,12 +202,33 @@ async function invalidateMosaicCache() {
         if (Date.parse(row.uploaded_at) > Date.parse(latestUploadedAt)) {
           latestUploadedAt = row.uploaded_at;
         }
-        const { maxzoom } = await getGeotiffMetadata(url);
-        await invalidateImage(geojson, maxzoom, mosaicCacheKeys);
+
+        // Metadata fetching may fail (e.g., TiTiler 404/500) and return null.
+        // In that case, skip this image to avoid crashing the whole invalidation job.
+        try {
+          const meta = await getGeotiffMetadata(url);
+          if (meta && typeof meta.maxzoom === "number") {
+            await invalidateImage(geojson, meta.maxzoom, mosaicCacheKeys);
+            hasInvalidatedAny = true;
+          } else {
+            logger.warn(
+              `Metadata missing for ${url}. Falling back to present-keys invalidation.`
+            );
+            const count = await invalidateImageUsingPresentKeys(geojson, mosaicCacheKeys);
+            hasInvalidatedAny = hasInvalidatedAny || count > 0;
+          }
+        } catch (error) {
+          logger.error(
+            `Failed to fetch metadata for ${url}. Falling back to present-keys invalidation.`,
+            error
+          );
+          const count = await invalidateImageUsingPresentKeys(geojson, mosaicCacheKeys);
+          hasInvalidatedAny = hasInvalidatedAny || count > 0;
+        }
       }
     }
 
-    if (imagesAddedSinceLastInvalidation.length > 0) {
+    if (imagesAddedSinceLastInvalidation.length > 0 && hasInvalidatedAny) {
       await cachePut(
         Buffer.from(
           JSON.stringify({
