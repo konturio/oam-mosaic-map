@@ -127,6 +127,14 @@ async function cacheDelete(key) {
   }
 }
 
+async function cacheDeleteBothExtensions(baseKeyWithoutExtension) {
+  // Delete both .png and .jpg variants if exist; ignore if missing
+  await Promise.allSettled([
+    cacheDelete(`${baseKeyWithoutExtension}.png`),
+    cacheDelete(`${baseKeyWithoutExtension}.jpg`),
+  ]);
+}
+
 async function cachePut(buffer, key) {
   const path = `${TILES_CACHE_DIR_PATH}/${key}`;
   if (!fs.existsSync(dirname(path))) {
@@ -150,6 +158,7 @@ export {
   cacheGet,
   cachePut,
   cacheDelete,
+  cacheDeleteBothExtensions,
   mosaicTilesIterable,
   metadataJsonsIterable,
   singleImageTilesIterable,

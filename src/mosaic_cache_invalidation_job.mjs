@@ -10,6 +10,7 @@ import {
 } from "./cache.mjs";
 import { getGeotiffMetadata } from "./metadata.mjs";
 import { getTileCover } from "./tile_cover.mjs";
+// cacheDeleteBothExtensions is not required because present keys already include extension
 import { logger } from "./logging.mjs";
 
 function geojsonGeometryFromBounds(topLeft, bottomRight) {
@@ -98,7 +99,9 @@ async function invalidateImageUsingPresentKeys(geojson, presentMosaicCacheKeys) 
 }
 
 const OAM_LAYER_ID = process.env.OAM_LAYER_ID || "openaerialmap";
-const MAX_SET_SIZE = 1_000_000;
+// How many present mosaic keys to accumulate before processing a batch.
+// Can be tuned via env MOSAIC_INVALIDATION_BATCH_SIZE; default 10000.
+const MAX_SET_SIZE = Number.parseInt(process.env.MOSAIC_INVALIDATION_BATCH_SIZE, 10) || 2_000;
 
 async function invalidateMosaicCache() {
   const cacheInfo = JSON.parse((await cacheGet("__info__.json")).toString());
@@ -149,22 +152,40 @@ async function invalidateMosaicCache() {
 
   logger.debug(`All ${allImages.length} images count`);
 
-  // read the list of images currently present in the cache so that it can
-  // be used later to delete only the tiles that are actually present in
-  // the cache
+  // Compute run-level watermark for added images and track if any were invalidated this run
+  let runLatestUploadedAt = null;
+  if (imagesAddedSinceLastInvalidation.length > 0) {
+    for (const row of imagesAddedSinceLastInvalidation) {
+      if (
+        !runLatestUploadedAt ||
+        Date.parse(row.uploaded_at) > Date.parse(runLatestUploadedAt)
+      ) {
+        runLatestUploadedAt = row.uploaded_at;
+      }
+    }
+  }
+  let runHasInvalidatedAdded = false;
+
+  // Read the list of present mosaic cache keys in batches and process incrementally.
+  // This avoids reading the entire filesystem tree before doing any useful work.
   const presentMosaicCacheKeys = new Set();
+  let scanned = 0;
   for await (const key of mosaicTilesIterable()) {
+    presentMosaicCacheKeys.add(key);
+    scanned += 1;
+
     if (presentMosaicCacheKeys.size >= MAX_SET_SIZE) {
-      // call processBatch when the set reaches the maximum allowed Set size
+      logger.debug(`Invalidation progress: collected ${scanned} present keys, processing batch`);
       await processBatch(presentMosaicCacheKeys);
       presentMosaicCacheKeys.clear();
     }
-
-    presentMosaicCacheKeys.add(key);
   }
 
   // call processBatch for the last batch
-  if (presentMosaicCacheKeys.size > 0) await processBatch(presentMosaicCacheKeys);
+  if (presentMosaicCacheKeys.size > 0) {
+    logger.debug(`Invalidation progress: final batch with ${presentMosaicCacheKeys.size} keys`);
+    await processBatch(presentMosaicCacheKeys);
+  }
 
   async function processBatch(mosaicCacheKeys) {
     for await (const metadataCacheKey of metadataJsonsIterable()) {
@@ -192,16 +213,10 @@ async function invalidateMosaicCache() {
       }
     }
 
-    let latestUploadedAt;
-    let hasInvalidatedAny = false;
     if (imagesAddedSinceLastInvalidation.length > 0) {
-      latestUploadedAt = imagesAddedSinceLastInvalidation[0].uploaded_at;
       for (const row of imagesAddedSinceLastInvalidation) {
         const url = row.uuid;
         const geojson = JSON.parse(row.geojson);
-        if (Date.parse(row.uploaded_at) > Date.parse(latestUploadedAt)) {
-          latestUploadedAt = row.uploaded_at;
-        }
 
         // Metadata fetching may fail (e.g., TiTiler 404/500) and return null.
         // In that case, skip this image to avoid crashing the whole invalidation job.
@@ -209,13 +224,13 @@ async function invalidateMosaicCache() {
           const meta = await getGeotiffMetadata(url);
           if (meta && typeof meta.maxzoom === "number") {
             await invalidateImage(geojson, meta.maxzoom, mosaicCacheKeys);
-            hasInvalidatedAny = true;
+            runHasInvalidatedAdded = true;
           } else {
             logger.warn(
               `Metadata missing for ${url}. Falling back to present-keys invalidation.`
             );
             const count = await invalidateImageUsingPresentKeys(geojson, mosaicCacheKeys);
-            hasInvalidatedAny = hasInvalidatedAny || count > 0;
+            if (count > 0) runHasInvalidatedAdded = true;
           }
         } catch (error) {
           logger.error(
@@ -223,21 +238,21 @@ async function invalidateMosaicCache() {
             error
           );
           const count = await invalidateImageUsingPresentKeys(geojson, mosaicCacheKeys);
-          hasInvalidatedAny = hasInvalidatedAny || count > 0;
+          if (count > 0) runHasInvalidatedAdded = true;
         }
       }
     }
+  }
 
-    if (imagesAddedSinceLastInvalidation.length > 0 && hasInvalidatedAny) {
-      await cachePut(
-        Buffer.from(
-          JSON.stringify({
-            last_updated: latestUploadedAt,
-          })
-        ),
-        "__info__.json"
-      );
-    }
+  if (runHasInvalidatedAdded && runLatestUploadedAt) {
+    await cachePut(
+      Buffer.from(
+        JSON.stringify({
+          last_updated: runLatestUploadedAt,
+        })
+      ),
+      "__info__.json"
+    );
   }
 
   logger.debug("Mosaic cache invalidation ended");
