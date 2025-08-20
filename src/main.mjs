@@ -20,6 +20,8 @@ import swaggerDefinition from "./swaggerDefinition.cjs";
 
 const isDev = process.env.NODE_ENV === "development";
 const PORT = process.env.PORT;
+const INVALIDATION_INTERVAL_MS =
+  Number.parseInt(process.env.MOSAIC_INVALIDATION_INTERVAL_MS, 10) || 600000;
 const BASE_URL = process.env.BASE_URL;
 const OAM_LAYER_ID = process.env.OAM_LAYER_ID || "openaerialmap";
 
@@ -375,17 +377,21 @@ function runQueuesStatusLogger() {
 }
 
 function runMosaicCacheInvalidationJob() {
-  const limit = pLimit(1);
+  let jobRunning = false;
   setInterval(() => {
-    // every next task invalidaiton job should wait for complition of already running one
-    // otherwise there might be several invalidation jobs running concurrently and deleting
-    // the same stale tiles from cache.
-    limit(() => {
-      return invalidateMosaicCache().catch((err) => {
+    if (jobRunning) {
+      logger.debug("invalidateMosaicCache skipped: previous run in progress");
+      return;
+    }
+    jobRunning = true;
+    invalidateMosaicCache()
+      .catch((err) => {
         logger.error(">error in invalidateMosaicCache", err);
+      })
+      .finally(() => {
+        jobRunning = false;
       });
-    });
-  }, 30000);
+  }, INVALIDATION_INTERVAL_MS);
 }
 
 const specs = swaggerJsDoc({

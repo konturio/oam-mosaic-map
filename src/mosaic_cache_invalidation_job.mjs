@@ -66,35 +66,54 @@ function parseMosaicCacheKey(cacheKey) {
   };
 }
 
+function computeGeojsonBbox(geojson) {
+  let minLon = Infinity,
+    minLat = Infinity,
+    maxLon = -Infinity,
+    maxLat = -Infinity;
+  const coords = geojson.coordinates[0];
+  for (const [lon, lat] of coords) {
+    if (lon < minLon) minLon = lon;
+    if (lat < minLat) minLat = lat;
+    if (lon > maxLon) maxLon = lon;
+    if (lat > maxLat) maxLat = lat;
+  }
+  return [minLon, minLat, maxLon, maxLat];
+}
+
+function tileBboxLonLat(z, x, y) {
+  const n = Math.pow(2, z);
+  const lon1 = (x / n) * 360 - 180;
+  const lon2 = ((x + 1) / n) * 360 - 180;
+  const latRad1 = Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / n)));
+  const latRad2 = Math.atan(Math.sinh(Math.PI * (1 - (2 * (y + 1)) / n)));
+  const lat1 = (latRad1 * 180) / Math.PI;
+  const lat2 = (latRad2 * 180) / Math.PI;
+  const minLon = Math.min(lon1, lon2);
+  const maxLon = Math.max(lon1, lon2);
+  const minLat = Math.min(lat1, lat2);
+  const maxLat = Math.max(lat1, lat2);
+  return [minLon, minLat, maxLon, maxLat];
+}
+
+function bboxesOverlap(a, b) {
+  const [aminLon, aminLat, amaxLon, amaxLat] = a;
+  const [bminLon, bminLat, bmaxLon, bmaxLat] = b;
+  return !(amaxLon < bminLon || bmaxLon < aminLon || amaxLat < bminLat || bmaxLat < aminLat);
+}
+
 async function invalidateImageUsingPresentKeys(geojson, presentMosaicCacheKeys) {
-  // Collect unique zoom levels available in cache
-  const zoomLevels = new Set();
-  for (const key of presentMosaicCacheKeys) {
-    const parsed = parseMosaicCacheKey(key);
-    if (parsed) zoomLevels.add(parsed.z);
-  }
-
-  // Precompute tile covers per zoom
-  const zoomToCover = new Map();
-  for (const z of zoomLevels) {
-    const cover = getTileCover(geojson, z);
-    // Convert to a fast lookup Set of "x:y"
-    const xySet = new Set(cover.map(([x, y]) => `${x}:${y}`));
-    zoomToCover.set(z, xySet);
-  }
-
+  const geoBbox = computeGeojsonBbox(geojson);
   let invalidatedCount = 0;
   for (const key of presentMosaicCacheKeys) {
     const parsed = parseMosaicCacheKey(key);
     if (!parsed) continue;
-    const xySet = zoomToCover.get(parsed.z);
-    if (!xySet) continue;
-    if (xySet.has(`${parsed.x}:${parsed.y}`)) {
+    const tileBbox = tileBboxLonLat(parsed.z, parsed.x, parsed.y);
+    if (bboxesOverlap(geoBbox, tileBbox)) {
       await cacheDelete(key);
       invalidatedCount += 1;
     }
   }
-
   return invalidatedCount;
 }
 
@@ -152,6 +171,9 @@ async function invalidateMosaicCache() {
 
   logger.debug(`All ${allImages.length} images count`);
 
+  // First, process deleted images in a single streaming pass over metadata JSONs
+  await processDeletedImagesOnce();
+
   // Compute run-level watermark for added images and track if any were invalidated this run
   let runLatestUploadedAt = null;
   if (imagesAddedSinceLastInvalidation.length > 0) {
@@ -166,7 +188,7 @@ async function invalidateMosaicCache() {
   }
   let runHasInvalidatedAdded = false;
 
-  // Read the list of present mosaic cache keys in batches and process incrementally.
+  // Read the list of present mosaic cache keys in batches and process added images incrementally.
   // This avoids reading the entire filesystem tree before doing any useful work.
   const presentMosaicCacheKeys = new Set();
   let scanned = 0;
@@ -176,7 +198,7 @@ async function invalidateMosaicCache() {
 
     if (presentMosaicCacheKeys.size >= MAX_SET_SIZE) {
       logger.debug(`Invalidation progress: collected ${scanned} present keys, processing batch`);
-      await processBatch(presentMosaicCacheKeys);
+      await processAddedForBatch(presentMosaicCacheKeys);
       presentMosaicCacheKeys.clear();
     }
   }
@@ -184,35 +206,10 @@ async function invalidateMosaicCache() {
   // call processBatch for the last batch
   if (presentMosaicCacheKeys.size > 0) {
     logger.debug(`Invalidation progress: final batch with ${presentMosaicCacheKeys.size} keys`);
-    await processBatch(presentMosaicCacheKeys);
+    await processAddedForBatch(presentMosaicCacheKeys);
   }
 
-  async function processBatch(mosaicCacheKeys) {
-    for await (const metadataCacheKey of metadataJsonsIterable()) {
-      const key = metadataCacheKey.replace("__metadata__/", "").replace(".json", "");
-      const image = allImages.find((image) => image.uuid.includes(key));
-      // if metadata for an image is present in the cache but missing in the "origin" database
-      // all cached mosaic tiles that contain this image need to be invalidated
-      // because the image itself was deleted.
-      if (!image) {
-        let bounds, maxzoom;
-        try {
-          const metadataBuffer = await cacheGet(metadataCacheKey);
-          if (!metadataBuffer || !metadataBuffer.length) continue;
-          const metadata = JSON.parse(metadataBuffer.toString());
-          if (!metadata) continue;
-          bounds = metadata.bounds;
-          maxzoom = metadata.maxzoom;
-        } catch (error) {
-          logger.warn(`metadata cache invalid for key ${metadataCacheKey}`);
-          continue; // skip invalid metadata jsons
-        }
-        const geojson = geojsonGeometryFromBounds(bounds.slice(0, 2), bounds.slice(2));
-        await invalidateImage(geojson, maxzoom, mosaicCacheKeys);
-        await cacheDelete(metadataCacheKey);
-      }
-    }
-
+  async function processAddedForBatch(mosaicCacheKeys) {
     if (imagesAddedSinceLastInvalidation.length > 0) {
       for (const row of imagesAddedSinceLastInvalidation) {
         const url = row.uuid;
@@ -239,6 +236,31 @@ async function invalidateMosaicCache() {
           );
           const count = await invalidateImageUsingPresentKeys(geojson, mosaicCacheKeys);
           if (count > 0) runHasInvalidatedAdded = true;
+        }
+      }
+    }
+  }
+
+  async function processDeletedImagesOnce() {
+    for await (const metadataCacheKey of metadataJsonsIterable()) {
+      const key = metadataCacheKey.replace("__metadata__/", "").replace(".json", "");
+      const image = allImages.find((image) => image.uuid.includes(key));
+      // if metadata for an image is present in the cache but missing in the origin database
+      // all cached mosaic tiles that contain this image need to be invalidated
+      if (!image) {
+        try {
+          const metadataBuffer = await cacheGet(metadataCacheKey);
+          if (!metadataBuffer || !metadataBuffer.length) continue;
+          const metadata = JSON.parse(metadataBuffer.toString());
+          if (!metadata) continue;
+          const bounds = metadata.bounds;
+          const maxzoom = metadata.maxzoom;
+          const geojson = geojsonGeometryFromBounds(bounds.slice(0, 2), bounds.slice(2));
+          await invalidateImage(geojson, maxzoom);
+          await cacheDelete(metadataCacheKey);
+        } catch (error) {
+          logger.warn(`metadata cache invalid for key ${metadataCacheKey}`);
+          continue;
         }
       }
     }
