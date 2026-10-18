@@ -102,9 +102,9 @@ class CacheMem extends EventEmitter {
   }
 
   purgeMosaic() {
-    for (const key of cache.keys()) {
-      if (key.startsWith("__mosaic__")) {
-        cache.delete(key);
+    for (const key of this.cache.keys()) {
+      if (key.startsWith("__mosaic__") || key.startsWith("__mosaic256__")) {
+        this.cache.delete(key);
       }
     }
   }

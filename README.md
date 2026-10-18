@@ -47,6 +47,8 @@ When the Mosaic Tiler receives a request for a tile, it handles it in the follow
 
 3. Create the resulting mosaic tile by stacking the tiles of all contained images on top of each other in a specific order (currently, the images are sorted based on their resolution, with the highest quality images appearing at the top).
 
+Purging the mosaic cache must remove both 512px (`__mosaic__`) and 256px (`__mosaic256__`) tiles while preserving unrelated cache entries, including image metadata.
+
 ## Logging
 
 To setup logging level use LOG_LEVEL env variable:
